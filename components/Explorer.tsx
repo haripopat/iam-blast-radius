@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import type { AnalysisPayload } from '@/app/actions'
-import { analyseSample, ask } from '@/app/actions'
+import type { AnalysisPayload, Source } from '@/app/actions'
+import { analyseSample, analyseSource, ask } from '@/app/actions'
 import type { Answer } from '@/lib/iam/query'
 import type { Finding, Severity, SourceRef } from '@/lib/iam/types'
 import { BlastRadiusGraph } from './BlastRadiusGraph'
@@ -275,11 +275,15 @@ export function Explorer({
   initialSlug: string
   initial: AnalysisPayload
 }) {
-  const [slug, setSlug] = useState(initialSlug)
+  const [source, setSource] = useState<Source>({ kind: 'sample', slug: initialSlug })
   const [analysis, setAnalysis] = useState(initial)
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState<Answer | null>(null)
   const [pending, startTransition] = useTransition()
+
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [pasteError, setPasteError] = useState<string | null>(null)
 
   const counts = analysis.findings.reduce<Record<string, number>>((acc, f) => {
     acc[f.severity] = (acc[f.severity] ?? 0) + 1
@@ -290,15 +294,32 @@ export function Explorer({
     if (!q.trim()) return
     setQuestion(q)
     startTransition(async () => {
-      setAnswer(await ask(slug, q, resourceOverride))
+      setAnswer(await ask(source, q, resourceOverride))
     })
   }
 
   const changeSample = (next: string) => {
-    setSlug(next)
+    setSource({ kind: 'sample', slug: next })
     setAnswer(null)
     startTransition(async () => {
       setAnalysis(await analyseSample(next))
+    })
+  }
+
+  const analysePaste = () => {
+    if (!pasteText.trim()) return
+    startTransition(async () => {
+      const next: Source = { kind: 'pasted', text: pasteText }
+      const result = await analyseSource(next)
+      if (!result.ok) {
+        setPasteError(result.error)
+        return
+      }
+      setPasteError(null)
+      setPasteOpen(false)
+      setAnswer(null)
+      setSource(next)
+      setAnalysis(result.payload)
     })
   }
 
@@ -313,17 +334,29 @@ export function Explorer({
             </p>
           </div>
 
-          <select
-            value={slug}
-            onChange={(e) => changeSample(e.target.value)}
-            className="ml-auto rounded-md border border-[#1e2635] bg-[#111621] px-3 py-1.5 text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff]"
-          >
-            {samples.map((s) => (
-              <option key={s.slug} value={s.slug}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+          <div className="ml-auto flex items-center gap-2">
+            <select
+              value={source.kind === 'sample' ? source.slug : ''}
+              onChange={(e) => changeSample(e.target.value)}
+              className="rounded-md border border-[#1e2635] bg-[#111621] px-3 py-1.5 text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff]"
+            >
+              {source.kind === 'pasted' && <option value="">{analysis.accountName}</option>}
+              {samples.map((s) => (
+                <option key={s.slug} value={s.slug}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => {
+                setPasteOpen((v) => !v)
+                setPasteError(null)
+              }}
+              className="rounded-md border border-[#1e2635] bg-[#111621] px-3 py-1.5 text-sm text-[#8b949e] transition-colors hover:border-[#58a6ff] hover:text-[#e6edf3]"
+            >
+              Paste policy
+            </button>
+          </div>
 
           <div className="flex items-center gap-3 font-mono text-xs">
             {(['critical', 'high', 'medium'] as Severity[]).map((sev) => (
@@ -338,6 +371,51 @@ export function Explorer({
       </header>
 
       <main className="mx-auto max-w-6xl space-y-6 px-6 py-6">
+        {pasteOpen && (
+          <section className="rounded-lg border border-[#1e2635] bg-[#111621] p-4">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="text-sm font-medium">Analyse your own policy</h2>
+              <span className="font-mono text-[10px] text-[#8b949e]">
+                an IAM policy document, an array of them, or a full account manifest
+              </span>
+            </div>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              spellCheck={false}
+              rows={10}
+              placeholder={'{\n  "Version": "2012-10-17",\n  "Statement": [\n    { "Effect": "Allow", "Action": "*", "Resource": "*" }\n  ]\n}'}
+              className="mt-3 w-full rounded-md border border-[#1e2635] bg-[#0b0e14] px-3 py-2 font-mono text-[12px] leading-relaxed text-[#c9d1d9] outline-none placeholder:text-[#3d4553] focus:border-[#58a6ff]"
+            />
+            {pasteError && (
+              <p className="mt-2 rounded-md border border-[#f85149]/30 bg-[#f85149]/10 px-3 py-2 text-sm text-[#f85149]">
+                {pasteError}
+              </p>
+            )}
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                onClick={analysePaste}
+                disabled={pending || !pasteText.trim()}
+                className="rounded-md bg-[#58a6ff] px-4 py-2 text-sm font-medium text-[#0b0e14] transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {pending ? 'Analysing…' : 'Analyse'}
+              </button>
+              <button
+                onClick={() => {
+                  setPasteOpen(false)
+                  setPasteError(null)
+                }}
+                className="rounded-md border border-[#1e2635] px-4 py-2 text-sm text-[#8b949e] transition-colors hover:text-[#e6edf3]"
+              >
+                Cancel
+              </button>
+              <span className="ml-auto font-mono text-[10px] text-[#8b949e]">
+                stays in this browser session — nothing is stored
+              </span>
+            </div>
+          </section>
+        )}
+
         <section>
           <div className="flex gap-2">
             <input
