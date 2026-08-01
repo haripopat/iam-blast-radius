@@ -6,6 +6,9 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // Tests import with explicit .ts extensions so `node --test` + tsx can
+    // resolve them as ESM. Safe here because noEmit is on.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
