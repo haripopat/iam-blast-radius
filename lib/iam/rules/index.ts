@@ -19,6 +19,13 @@ import { IamEngine } from '../engine'
 import { escalationRoutes, reachableCapabilities, short } from '../escalation'
 import { Finding, Policy, Severity, Statement } from '../types'
 import { parseCrn } from '../match'
+import {
+  observedActions,
+  rewriteStatement,
+  roleArns,
+  summarise,
+  unprivilegedGroups,
+} from './rewrite'
 
 interface Rule {
   id: string
@@ -74,7 +81,19 @@ const RULES: Rule[] = [
         if (!wildAction || !wildResource) continue
 
         const holders = holdersOf(engine, policy.id)
+        const observed = observedActions(engine, holders, statement.id)
         findings.push({
+          rewrite: rewriteStatement(
+            statement,
+            (draft) => {
+              draft.Action =
+                observed.length > 0 ? summarise(observed) : ['REPLACE_WITH_REQUIRED_ACTIONS']
+              draft.Resource = ['REPLACE_WITH_SPECIFIC_RESOURCE_ARNS']
+            },
+            observed.length > 0
+              ? `Action narrowed to the ${observed.length} action(s) these principals are already granted elsewhere in this account. Resource still needs real ARNs — that cannot be inferred from policy alone.`
+              : 'These principals hold no other statements to learn from, so both fields need filling in by hand.'
+          ),
           id: `wildcard-action-resource:${statement.id}`,
           rule: this.id,
           severity: 'critical',
@@ -105,6 +124,16 @@ const RULES: Rule[] = [
 
         const hasGuard = statement.conditions.length > 0
         findings.push({
+          rewrite: rewriteStatement(
+            statement,
+            (draft) => {
+              draft.Principal = { AWS: `arn:aws:iam::${engine.account.id}:root` }
+              draft.Condition = {
+                StringEquals: { 'sts:ExternalId': 'REPLACE_WITH_SECRET_EXTERNAL_ID' },
+              }
+            },
+            `Principal narrowed from "*" to this account. If the role is genuinely for a third party, put their account ARN here instead and keep the sts:ExternalId condition — the external ID must be a secret you generate per integration, so it is left as a placeholder rather than invented.`
+          ),
           id: `wildcard-principal-trust:${statement.id}`,
           rule: this.id,
           severity: hasGuard ? 'high' : 'critical',
@@ -207,7 +236,21 @@ const RULES: Rule[] = [
         if (!statement.notActions || statement.notActions.length === 0) continue
 
         const holders = holdersOf(engine, policy.id)
+        const observed = observedActions(engine, holders, statement.id)
         findings.push({
+          rewrite: rewriteStatement(
+            statement,
+            (draft) => {
+              delete draft.NotAction
+              draft.Action =
+                observed.length > 0 ? summarise(observed) : ['REPLACE_WITH_REQUIRED_ACTIONS']
+            },
+            `NotAction replaced with an explicit Action list${
+              observed.length > 0
+                ? `, seeded from the ${observed.length} action(s) these principals already hold elsewhere`
+                : ''
+            }. Add whatever else the role genuinely needs — an explicit list stays the same size when AWS ships a new service, which is the whole point.`
+          ),
           id: `not-action-inversion:${statement.id}`,
           rule: this.id,
           severity: 'high',
@@ -244,7 +287,18 @@ const RULES: Rule[] = [
         if (!statement.resources.includes('*')) continue
 
         const holders = holdersOf(engine, policy.id)
+        const roles = roleArns(engine)
         findings.push({
+          rewrite: rewriteStatement(
+            statement,
+            (draft) => {
+              draft.Resource = roles.length > 0 ? roles : ['REPLACE_WITH_PASSABLE_ROLE_ARNS']
+              draft.Condition = {
+                StringEquals: { 'iam:PassedToService': 'ec2.amazonaws.com' },
+              }
+            },
+            `Resource scoped to the ${roles.length} role(s) that exist in this account — remove any the holder should not be able to pass. The added iam:PassedToService condition stops the role being handed to a service you did not intend; change the value to match.`
+          ),
           id: `passrole-wildcard:${statement.id}`,
           rule: this.id,
           severity: 'high',
@@ -280,7 +334,18 @@ const RULES: Rule[] = [
         if (!statement.resources.includes('*')) continue
 
         const holders = holdersOf(engine, policy.id)
+        const safeGroups = unprivilegedGroups(engine)
         findings.push({
+          rewrite: rewriteStatement(
+            statement,
+            (draft) => {
+              draft.Resource =
+                safeGroups.length > 0 ? safeGroups : ['REPLACE_WITH_SELF_SERVICE_GROUP_ARNS']
+            },
+            safeGroups.length > 0
+              ? `Resource scoped to the ${safeGroups.length} group(s) that carry no wildcard or IAM permissions, so joining them cannot escalate. Every other group is excluded.`
+              : 'Every group in this account carries privileged policies, so none of them are safe for self-service. Scope this to groups created specifically for it.'
+          ),
           id: `self-service-group-membership:${statement.id}`,
           rule: this.id,
           severity: 'critical',
@@ -358,7 +423,29 @@ const RULES: Rule[] = [
         if (statement.resources.every((r) => parseCrn(r)?.service !== '*')) continue
 
         const holders = holdersOf(engine, policy.id)
+        const services = [
+          ...new Set(
+            engine
+              .entities('resource')
+              .map((r) => parseCrn(r.id)?.service)
+              .filter((s): s is string => Boolean(s))
+          ),
+        ]
         findings.push({
+          rewrite: rewriteStatement(
+            statement,
+            (draft) => {
+              const attrs = Array.isArray(draft.resource) ? [...draft.resource] : []
+              attrs.push({
+                name: 'serviceName',
+                value: services[0] ?? 'REPLACE_WITH_SERVICE_NAME',
+              })
+              draft.resource = attrs
+            },
+            services.length > 0
+              ? `Adds the serviceName attribute that scopes this to one service. This account has ${services.length}: ${services.join(', ')} — issue one policy per service the subject genuinely needs, rather than a single account-wide grant.`
+              : 'Adds the serviceName attribute. Set it to the service this policy is actually meant to cover.'
+          ),
           id: `ibm-account-wide-policy:${statement.id}`,
           rule: this.id,
           severity: 'high',
@@ -393,6 +480,15 @@ const RULES: Rule[] = [
 
         const holders = holdersOf(engine, policy.id)
         findings.push({
+          rewrite: rewriteStatement(
+            statement,
+            (draft) => {
+              if (Array.isArray(draft.roles)) {
+                draft.roles = draft.roles.map((r) => (r === 'Administrator' ? 'Editor' : r))
+              }
+            },
+            'Administrator downgraded to Editor. Editor can create, update and delete the resource but cannot assign access to anyone else, which is what turns Administrator into a self-service escalation. Keep Administrator only where delegating access is genuinely part of the job.'
+          ),
           id: `ibm-assign-access-role:${statement.id}`,
           rule: this.id,
           severity: 'critical',

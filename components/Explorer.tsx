@@ -89,6 +89,36 @@ function FindingCard({ finding }: { finding: Finding }) {
             <div className="font-mono text-[10px] uppercase tracking-wide text-[#3fb950]">Remediation</div>
             <p className="mt-1 text-sm leading-relaxed text-[#c9d1d9]">{finding.remediation}</p>
           </div>
+
+          {finding.rewrite && (
+            <div className="mt-3">
+              <div className="flex flex-wrap items-baseline gap-2 font-mono text-[10px] uppercase tracking-wide text-[#8b949e]">
+                <span>Suggested least-privilege rewrite</span>
+                <span className="rounded border border-[#1e2635] px-1.5 py-0.5 normal-case">
+                  derived from this account, not generated
+                </span>
+              </div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <div className="overflow-hidden rounded-md border border-[#f85149]/30 bg-[#f85149]/[0.04]">
+                  <div className="border-b border-[#f85149]/20 px-3 py-1.5 font-mono text-[10px] uppercase text-[#f85149]">
+                    Current
+                  </div>
+                  <pre className="overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9]">
+                    {finding.rewrite.before}
+                  </pre>
+                </div>
+                <div className="overflow-hidden rounded-md border border-[#3fb950]/30 bg-[#3fb950]/[0.04]">
+                  <div className="border-b border-[#3fb950]/20 px-3 py-1.5 font-mono text-[10px] uppercase text-[#3fb950]">
+                    Suggested
+                  </div>
+                  <pre className="overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9]">
+                    {finding.rewrite.after}
+                  </pre>
+                </div>
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-[#8b949e]">{finding.rewrite.note}</p>
+            </div>
+          )}
           <div className="mt-3 font-mono text-[10px] uppercase tracking-wide text-[#8b949e]">
             Evidence — the exact statements that triggered this
           </div>

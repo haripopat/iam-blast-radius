@@ -156,6 +156,21 @@ export interface EvaluationResult {
 // Findings
 // ---------------------------------------------------------------------------
 
+/**
+ * A concrete narrowed version of the offending statement.
+ *
+ * Derived deterministically from the account — what the principals are
+ * observed to actually use, which roles exist, which groups are unprivileged.
+ * No model is involved, so the suggestion is reproducible and can be diffed
+ * against the original rather than taken on trust.
+ */
+export interface Rewrite {
+  before: string
+  after: string
+  /** What the change does and what still needs a human decision. */
+  note: string
+}
+
 export interface Finding {
   id: string
   /** Rule that produced this, e.g. `wildcard-action-resource` */
@@ -166,6 +181,8 @@ export interface Finding {
   description: string
   /** What to do about it */
   remediation: string
+  /** A concrete narrowed statement, where one can be derived */
+  rewrite?: Rewrite
   /** Entities affected */
   principals: string[]
   /** Every statement backing this claim */
