@@ -169,6 +169,66 @@ test('paste: a bucket policy with a wildcard principal is flagged', () => {
   assert.ok(rules.includes('public-resource-policy'))
 })
 
+test('paste: a bucket policy names who it actually grants to', () => {
+  // Without synthesising the principals a resource policy names, the account
+  // contains nobody it grants to and "who can read this?" answers "nobody" —
+  // the exact opposite of the truth.
+  const { engine } = loadFromText(
+    JSON.stringify({
+      Statement: [
+        {
+          Sid: 'PublicRead',
+          Effect: 'Allow',
+          Principal: { AWS: '*' },
+          Action: 's3:GetObject',
+          Resource: 'arn:aws:s3:::acme-invoices/*',
+        },
+        {
+          Sid: 'PartnerWrite',
+          Effect: 'Allow',
+          Principal: { AWS: 'arn:aws:iam::999888777666:root' },
+          Action: 's3:PutObject',
+          Resource: 'arn:aws:s3:::acme-invoices/*',
+        },
+      ],
+    })
+  )
+
+  const names = engine.principals().map((p) => p.name).sort()
+  assert.deepEqual(names, ['anyone in account 999888777666', 'anyone on the internet'])
+
+  // A pure resource policy has no identity in it, so no holder is invented.
+  assert.ok(!names.includes('pasted-principal'))
+
+  // Write is granted only to the named partner — the wildcard statement covers
+  // GetObject only, so this must not leak across.
+  const writers = engine
+    .whoCan('s3:PutObject', 'arn:aws:s3:::acme-invoices/*')
+    .map((w) => w.principal.name)
+  assert.deepEqual(writers, ['anyone in account 999888777666'])
+})
+
+test('paste: resource-policy grants reach the resource the policy names', () => {
+  // The resource entity must be the literal ARN from the policy. A synthetic
+  // id would never match the statement's own Resource and the grant would
+  // silently evaluate to nothing.
+  const { engine, account } = loadFromText(
+    JSON.stringify({
+      Statement: [
+        {
+          Effect: 'Allow',
+          Principal: { AWS: '*' },
+          Action: 's3:GetObject',
+          Resource: 'arn:aws:s3:::acme-invoices/*',
+        },
+      ],
+    })
+  )
+  const resources = account.entities.filter((e) => e.type === 'resource').map((e) => e.id)
+  assert.deepEqual(resources, ['arn:aws:s3:::acme-invoices/*'])
+  assert.equal(engine.whoCan('s3:GetObject', 'arn:aws:s3:::acme-invoices/*').length, 1)
+})
+
 test('paste: unusable input fails with a message that explains the shape', () => {
   assert.throws(() => loadFromText('{nope'), /valid JSON/)
   assert.throws(() => loadFromText('{"hello":"world"}'), /Statement/)

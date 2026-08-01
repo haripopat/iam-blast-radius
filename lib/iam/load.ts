@@ -4,6 +4,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
+import { parseArn } from './match'
 import { buildEngine, IamEngine } from './engine'
 import {
   loadAwsAccount,
@@ -12,7 +13,7 @@ import {
   RawPolicyDocument,
 } from './normalize/aws'
 import { loadIbmAccount, RawIbmManifest } from './normalize/ibm'
-import { Account, Policy } from './types'
+import { Account, Entity, Policy, Principal } from './types'
 
 const SAMPLES_DIR = path.join(process.cwd(), 'data', 'samples')
 
@@ -91,12 +92,16 @@ function accountFromPolicyDocuments(
       name: docs.length > 1 ? `Pasted policy ${index + 1}` : 'Pasted policy',
       provider: 'aws' as const,
       kind: isResourcePolicy ? ('resource' as const) : ('identity' as const),
-      attachedTo: isResourcePolicy ? PASTED_RESOURCE : undefined,
+      // Attach to the resource the policy itself names, not an invented ARN.
+      // A synthetic id would never match the statement's own `Resource`, so
+      // the grant would silently evaluate to nothing.
+      attachedTo: isResourcePolicy ? (statements[0]?.resources[0] ?? PASTED_RESOURCE) : undefined,
       statements,
     }
   })
 
   const identityPolicies = policies.filter((p) => p.kind === 'identity').map((p) => p.id)
+  const namedResources = resourcesNamedIn(policies)
 
   return {
     provider: 'aws',
@@ -104,21 +109,127 @@ function accountFromPolicyDocuments(
     name: 'Pasted policy',
     trustedAccounts: [PASTED_ACCOUNT],
     entities: [
-      {
-        id: PASTED_PRINCIPAL,
-        type: 'user',
-        name: 'pasted-principal',
-        attachedPolicies: identityPolicies,
-      },
-      {
-        id: PASTED_RESOURCE,
-        type: 'resource',
-        name: 'pasted-resource',
-        attachedPolicies: [],
-      },
+      // Only invent a holder when there is an identity policy for it to hold.
+      // A pure resource policy has no identity in it, and listing a fictional
+      // user among the answers to "who can reach this" is noise at best.
+      ...(identityPolicies.length > 0
+        ? [
+            {
+              id: PASTED_PRINCIPAL,
+              type: 'user' as const,
+              name: 'pasted-principal',
+              attachedPolicies: identityPolicies,
+            },
+          ]
+        : []),
+      ...(namedResources.length > 0
+        ? namedResources
+        : [
+            {
+              id: PASTED_RESOURCE,
+              type: 'resource' as const,
+              name: 'pasted-resource',
+              attachedPolicies: [],
+            },
+          ]),
+      ...principalsNamedIn(policies),
     ],
     policies,
   }
+}
+
+/**
+ * The resources a pasted resource policy names, as entities.
+ *
+ * These have to be the literal `Resource` strings from the policy — an S3
+ * bucket policy grants on `arn:aws:s3:::bucket/*`, and asking about anything
+ * else simply does not match it.
+ */
+function resourcesNamedIn(policies: Policy[]): Entity[] {
+  const byId = new Map<string, Entity>()
+
+  for (const policy of policies) {
+    if (policy.kind !== 'resource') continue
+    for (const statement of policy.statements) {
+      for (const resource of statement.resources) {
+        if (resource === '*' || byId.has(resource)) continue
+        byId.set(resource, {
+          id: resource,
+          type: 'resource',
+          name: resourceLabel(resource),
+          attachedPolicies: [],
+        })
+      }
+    }
+  }
+
+  return [...byId.values()]
+}
+
+function resourceLabel(resource: string): string {
+  const trimmed = resource.replace(/\/\*$/, '')
+  const parsed = parseArn(trimmed)
+  if (parsed?.resourceId) return parsed.resourceId
+  const colon = trimmed.lastIndexOf(':')
+  return colon === -1 ? trimmed : trimmed.slice(colon + 1)
+}
+
+/**
+ * Turn the principals a resource policy *names* into entities.
+ *
+ * Without this, pasting a bucket policy produces an account containing nobody
+ * it grants to, so "who can read this?" answers "nobody" — the exact opposite
+ * of the truth. The principals in a resource policy are the answer to that
+ * question, so they have to exist as entities for the engine to return them.
+ *
+ * A wildcard principal becomes an entity named for what it actually means. It
+ * is the single most important row this tool can show against a public bucket,
+ * and burying it as `*` would waste it.
+ */
+function principalsNamedIn(policies: Policy[]): Entity[] {
+  const byId = new Map<string, Entity>()
+
+  for (const policy of policies) {
+    if (policy.kind !== 'resource') continue
+    for (const statement of policy.statements) {
+      for (const principal of statement.principals ?? []) {
+        if (byId.has(principal.id)) continue
+        byId.set(principal.id, {
+          id: principal.id,
+          type: entityTypeFor(principal.type),
+          name: principalLabel(principal),
+          attachedPolicies: [],
+        })
+      }
+    }
+  }
+
+  return [...byId.values()]
+}
+
+function entityTypeFor(type: Principal['type']): Entity['type'] {
+  switch (type) {
+    case 'user':
+      return 'user'
+    case 'role':
+      return 'role'
+    case 'service':
+      return 'service'
+    default:
+      // Account roots, federated identities and the wildcard all stand for
+      // "some set of principals we cannot enumerate", which is close enough to
+      // an account for the purpose of answering who can reach a resource.
+      return 'account'
+  }
+}
+
+function principalLabel(principal: Principal): string {
+  if (principal.type === 'wildcard' || principal.id === '*') return 'anyone on the internet'
+  if (principal.type === 'service') return principal.id
+  const parsed = parseArn(principal.id)
+  if (parsed?.resourceType === 'root') return `anyone in account ${parsed.account}`
+  const slash = principal.id.lastIndexOf('/')
+  return slash === -1 ? principal.id : principal.id.slice(slash + 1)
 }
 
 function isPolicyDocument(value: unknown): value is RawPolicyDocument {

@@ -67,7 +67,14 @@ export class IamEngine {
    */
   principals(): Entity[] {
     return this.account.entities.filter(
-      (e) => e.type === 'user' || e.type === 'role' || e.type === 'service'
+      (e) =>
+        e.type === 'user' ||
+        e.type === 'role' ||
+        e.type === 'service' ||
+        // Account entities only appear for principals a resource policy names
+        // — an external account, or the wildcard. They are exactly who the
+        // answer to "who can reach this" should list.
+        e.type === 'account'
     )
   }
 
