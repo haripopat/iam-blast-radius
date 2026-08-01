@@ -200,7 +200,25 @@ function AnswerPanel({
             )}
             {answer.direct.map((d) => (
               <div key={d.principal} className="rounded-md border border-[#1e2635] bg-[#0b0e14] px-3 py-2">
-                <div className="font-mono text-sm text-[#e6edf3]">{d.name}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-sm text-[#e6edf3]">{d.name}</span>
+                  {d.guardedBy && (
+                    <span
+                      className="rounded border border-[#d29922]/40 bg-[#d29922]/10 px-1.5 py-0.5 font-mono text-[10px] text-[#d29922]"
+                      title="This allow depends on a condition we cannot resolve from policy alone. The access is real, but gated."
+                    >
+                      conditional
+                    </span>
+                  )}
+                </div>
+                {d.guardedBy && (
+                  <div className="mt-1 font-mono text-[10px] leading-relaxed text-[#d29922]">
+                    only when{' '}
+                    {d.guardedBy
+                      .map((c) => `${c.key} ${c.operator} ${c.values.join(' or ')}`)
+                      .join(' and ')}
+                  </div>
+                )}
                 <div className="font-mono text-[10px] text-[#8b949e]">
                   {d.evidence[0]?.file}
                   {d.evidence[0]?.pointer}

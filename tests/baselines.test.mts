@@ -23,6 +23,7 @@ import assert from 'node:assert/strict'
 import { loadSample, loadFromText } from '../lib/iam/load.ts'
 import { analyseAccount, severityCounts } from '../lib/iam/rules/index.ts'
 import { reachableCapabilities, escalationRoutes } from '../lib/iam/escalation.ts'
+import { answerQuestion, parseQuestion } from '../lib/iam/query.ts'
 
 const PROD_DB = 'arn:aws:rds:eu-west-1:123456789012:cluster:acme-prod-primary'
 
@@ -90,6 +91,33 @@ test('aws: every escalation step cites evidence', () => {
       )
     }
   }
+})
+
+test('aws: a condition-gated allow is reported as conditional, not dropped or asserted', () => {
+  // The engine has three condition states — satisfied, unsatisfied, unknown.
+  // An allow that depends on MFA is real but gated, and presenting it as
+  // unconditional would overstate access while dropping it would understate.
+  const { engine } = loadSample('acme-corp')
+  const answer = answerQuestion(engine, 'who can delete database snapshots')
+
+  const gated = answer.direct.filter((d) => d.guardedBy)
+  assert.deepEqual(
+    gated.map((d) => d.name),
+    ['ec2-app-role']
+  )
+  assert.equal(gated[0].guardedBy?.[0].key, 'aws:MultiFactorAuthPresent')
+
+  // The other two hold it through a wildcard or a NotAction, with no condition.
+  assert.ok(answer.direct.some((d) => d.name === 'breakglass-admin' && !d.guardedBy))
+})
+
+test('aws: adding the snapshot resource did not steal the headline question', () => {
+  // Both are RDS and both are production-ish, so they compete on ranking.
+  // "production database" must still resolve to the cluster.
+  const { engine } = loadSample('acme-corp')
+  const parsed = parseQuestion(engine, 'who can delete the production database')
+  assert.equal(engine.entity(parsed.resource)?.name, 'acme-prod-primary')
+  assert.equal(parsed.confidence, 'exact')
 })
 
 // ---------------------------------------------------------------------------

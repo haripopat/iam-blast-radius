@@ -158,6 +158,13 @@ export interface DirectAccess {
   principal: string
   name: string
   evidence: SourceRef[]
+  /**
+   * Conditions the allow depends on that we could not resolve — an MFA
+   * requirement, a source-IP restriction. The access is real but gated, and
+   * saying so is more honest than either dropping it or presenting it as
+   * unconditional.
+   */
+  guardedBy?: { operator: string; key: string; values: string[] }[]
 }
 
 export interface IndirectAccess {
@@ -217,6 +224,7 @@ export function answerQuestion(
         principal: principal.id,
         name: principal.name,
         evidence: result.matched.map((s) => s.sourceRef),
+        guardedBy: result.guardedBy.length > 0 ? result.guardedBy : undefined,
       })
       continue
     }

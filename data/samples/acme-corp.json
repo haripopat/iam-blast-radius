@@ -81,6 +81,12 @@
       "tags": { "env": "production", "data": "database-backups" }
     },
     {
+      "id": "arn:aws:rds:eu-west-1:123456789012:snapshot:acme-nightly",
+      "type": "resource",
+      "name": "acme-nightly-snapshots",
+      "tags": { "env": "prod-backup", "data": "customer-pii" }
+    },
+    {
       "id": "arn:aws:secretsmanager:eu-west-1:123456789012:secret:acme-prod-db-credentials",
       "type": "resource",
       "name": "acme-prod-db-credentials",
@@ -200,6 +206,15 @@
             "Effect": "Allow",
             "Action": "rds:*",
             "Resource": "arn:aws:rds:eu-west-1:123456789012:cluster:acme-prod-primary"
+          },
+          {
+            "Sid": "ManageSnapshotsWithMfa",
+            "Effect": "Allow",
+            "Action": "rds:*",
+            "Resource": "arn:aws:rds:eu-west-1:123456789012:snapshot:*",
+            "Condition": {
+              "Bool": { "aws:MultiFactorAuthPresent": "true" }
+            }
           },
           {
             "Sid": "WriteBackups",
