@@ -203,6 +203,68 @@ export const SERVICE_CATALOGUE: ServiceActions[] = [
       admin: 'sts:*',
     },
   },
+
+  // -------------------------------------------------------------------------
+  // IBM Cloud. Actions follow IBM's own `<service>.<resourceType>.<operation>`
+  // convention rather than being coerced into AWS syntax. Service names are
+  // IBM's, so these coexist with the AWS entries in one catalogue without
+  // colliding.
+  // -------------------------------------------------------------------------
+  {
+    service: 'databases-for-postgresql',
+    label: 'database',
+    aliases: ['postgres', 'postgresql', 'database', 'databases', 'db'],
+    actions: {
+      delete: 'databases-for-postgresql.*.delete',
+      read: 'databases-for-postgresql.*.get',
+      write: 'databases-for-postgresql.*.update',
+      admin: 'databases-for-postgresql.*.*',
+    },
+  },
+  {
+    service: 'cloud-object-storage',
+    label: 'object storage bucket',
+    aliases: ['cos', 'bucket', 'buckets', 'archive', 'backup', 'backups', 'object storage'],
+    actions: {
+      delete: 'cloud-object-storage.*.delete',
+      read: 'cloud-object-storage.data.read',
+      write: 'cloud-object-storage.data.write',
+      admin: 'cloud-object-storage.*.*',
+    },
+  },
+  {
+    service: 'secrets-manager',
+    label: 'secret',
+    aliases: ['secret', 'secrets', 'credential', 'credentials'],
+    actions: {
+      delete: 'secrets-manager.*.delete',
+      read: 'secrets-manager.data.read',
+      write: 'secrets-manager.data.write',
+      admin: 'secrets-manager.*.*',
+    },
+  },
+  {
+    service: 'iam-groups',
+    label: 'access group',
+    aliases: ['access group', 'access groups', 'iam-groups'],
+    actions: {
+      delete: 'iam-groups.groups.delete',
+      read: 'iam-groups.groups.get',
+      write: 'iam-groups.groups.update',
+      admin: 'iam-groups.*.*',
+    },
+  },
+  {
+    service: 'iam-identity',
+    label: 'service ID',
+    aliases: ['service id', 'service ids', 'iam-identity', 'api key', 'api keys'],
+    actions: {
+      delete: 'iam-identity.serviceid.delete',
+      read: 'iam-identity.serviceid.get',
+      write: 'iam-identity.serviceid.create',
+      admin: 'iam-identity.*.*',
+    },
+  },
 ]
 
 const BY_SERVICE = new Map(SERVICE_CATALOGUE.map((s) => [s.service, s]))
@@ -219,19 +281,44 @@ export function actionFor(service: string, verb: VerbClass): string {
 /**
  * Every action we recognise. This becomes the model's schema `enum`, so it is
  * the hard ceiling on what the model can ask the engine about.
+ *
+ * Pass the services actually present in the account to scope it. Offering an
+ * AWS action against an IBM account (or vice versa) can only ever produce a
+ * query nothing matches, so narrowing the enum removes a whole class of
+ * confidently-empty answers.
  */
-export function allKnownActions(): string[] {
+export function allKnownActions(presentServices?: Iterable<string>): string[] {
+  const allowed = presentServices ? new Set(presentServices) : null
   const out = new Set<string>(['*'])
   for (const svc of SERVICE_CATALOGUE) {
+    if (allowed && !allowed.has(svc.service)) continue
     for (const action of Object.values(svc.actions)) out.add(action)
   }
-  return [...out]
+  // A question about an account with no recognised services still needs
+  // something to pick, so fall back to the whole catalogue.
+  return out.size > 1 ? [...out] : allKnownActions()
 }
 
-/** Which service does a question token point at? */
-export function serviceForToken(token: string): ServiceActions | undefined {
+/**
+ * Which service does a question token point at?
+ *
+ * Aliases deliberately overlap across providers — "database" means `rds` on
+ * AWS and `databases-for-postgresql` on IBM. `present` breaks the tie in
+ * favour of a service the account actually has, so the same question works on
+ * either account without the user knowing which cloud they're looking at.
+ */
+export function serviceForToken(
+  token: string,
+  present?: Set<string>
+): ServiceActions | undefined {
   const lower = token.toLowerCase()
-  return SERVICE_CATALOGUE.find((s) => s.aliases.includes(lower))
+  const matches = SERVICE_CATALOGUE.filter((s) => s.aliases.includes(lower))
+  if (matches.length === 0) return undefined
+  if (present) {
+    const inAccount = matches.find((s) => present.has(s.service))
+    if (inAccount) return inAccount
+  }
+  return matches[0]
 }
 
 // ---------------------------------------------------------------------------

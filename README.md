@@ -46,19 +46,39 @@ Engine-only, no UI:
 npx tsx scripts/analyze.ts data/samples/acme-corp.json "rds:DeleteDBCluster" "arn:aws:rds:eu-west-1:123456789012:cluster:acme-prod-primary"
 ```
 
+## Two clouds, one engine
+
+Both **AWS IAM** and **IBM Cloud IAM** load into the same normalised model, so the evaluator, the rules, the escalation search and the UI are provider-agnostic. The same English question works against either account:
+
+| Question | AWS account | IBM account |
+|---|---|---|
+| who can wipe the production database | `rds:DeleteDBCluster` | `databases-for-postgresql.*.delete` |
+| who can read our secrets | `secretsmanager:GetSecretValue` | `secrets-manager.data.read` |
+| who can delete the backups | `s3:DeleteObject` | `cloud-object-storage.*.delete` |
+
+IBM is genuinely different, not a find-and-replace on the AWS path:
+
+- AWS policies name **actions**; IBM policies name **roles** (`Viewer`, `Editor`, `Administrator`), so normalising means expanding each role into the actions it implies.
+- AWS scopes with an ARN string; IBM scopes with an **attribute set**, where an omitted attribute means "any" — so a policy with only `serviceName` set covers every instance of that service, and one with no `serviceName` covers *every service in the account*. Both are easy to under-read, and both get their own finding.
+- IBM's **Administrator** platform role includes the right to assign access to others. It reads like an ordinary admin tier and is actually a one-step escalation to full control. On the bundled IBM account, a support analyst reaches full administrator in two steps because of it.
+
 ## How it works
 
 ```
 lib/iam/
   types.ts          normalised model — every provider flattens into this
-  match.ts          IAM glob matching, ARN parsing
+  match.ts          IAM glob matching, ARN + CRN parsing
+  actions.ts        the action catalogue: 21 services across both providers
   engine.ts         the evaluator: can(principal, action, resource) -> decision + citations
   escalation.ts     fixpoint search over escalation techniques -> multi-hop routes
   rules/            deterministic risk rules -> findings with severity + remediation
   query.ts          deterministic English -> query
-  enhance.ts        Claude English -> query, on a closed set, with fallback
+  enhance.ts        Gemini English -> query, on a closed set, with fallback
   normalize/aws.ts  AWS IAM JSON -> normalised model
+  normalize/ibm.ts  IBM Cloud IAM policies -> normalised model
 ```
+
+Escalation techniques are tagged by provider, and that gating is load-bearing rather than tidiness: an AWS policy using `NotAction: ["iam:*"]` matches *any* string that isn't AWS-IAM-shaped — including IBM action names like `iam.policy.create`, which contain no colon. Without the filter, an AWS "allow everything except IAM" policy silently satisfies an IBM technique and reports an escalation that cannot happen.
 
 The core is a **capability fixpoint**. Start with the identity an attacker controls; repeatedly apply every known escalation technique to whatever they control so far; stop when nothing new is reachable. A hop is only added if the evaluator independently proves it, and each step records what it depended on — so walking the graph backwards reconstructs the whole route, not just the last move.
 

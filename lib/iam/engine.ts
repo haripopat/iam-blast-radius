@@ -60,10 +60,14 @@ export class IamEngine {
       : this.account.entities
   }
 
-  /** Users and roles — the things that can actually take an action. */
+  /**
+   * The things that can actually take an action: users, roles, and service
+   * identities. IBM service IDs hold policies exactly as a user does, so
+   * omitting them would silently drop them from every "who can" answer.
+   */
   principals(): Entity[] {
     return this.account.entities.filter(
-      (e) => e.type === 'user' || e.type === 'role'
+      (e) => e.type === 'user' || e.type === 'role' || e.type === 'service'
     )
   }
 
@@ -174,6 +178,38 @@ export class IamEngine {
     if (allows.length > 0) {
       return { decision: 'allow', matched: allows, guardedBy }
     }
+    return { decision: 'implicit-deny', matched: [], guardedBy: [] }
+  }
+
+  /**
+   * Can `principalId` perform `action` on *anything*?
+   *
+   * AWS escalation checks name a concrete target ARN, but IBM policies scope
+   * by attribute set — a policy granting Administrator over the `iam-groups`
+   * service has no single resource id to ask about. This answers "does this
+   * principal hold this action anywhere in the account", which is the right
+   * question for capability-style permissions.
+   */
+  canAnywhere(
+    principalId: string,
+    action: string,
+    extraGroups: string[] = []
+  ): EvaluationResult {
+    const statements = this.identityStatements(principalId, extraGroups)
+    const denies: Statement[] = []
+    const allows: Statement[] = []
+
+    for (const stmt of statements) {
+      if (!statementMatchesAction(stmt, action)) continue
+      if (evaluateConditions(stmt.conditions, undefined) === 'unsatisfied') continue
+      if (stmt.effect === 'Deny') denies.push(stmt)
+      else allows.push(stmt)
+    }
+
+    if (denies.length > 0) {
+      return { decision: 'explicit-deny', matched: denies, guardedBy: [] }
+    }
+    if (allows.length > 0) return { decision: 'allow', matched: allows, guardedBy: [] }
     return { decision: 'implicit-deny', matched: [], guardedBy: [] }
   }
 

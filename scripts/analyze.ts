@@ -7,23 +7,21 @@
  *     "rds:DeleteDBCluster" "arn:aws:rds:eu-west-1:123456789012:cluster:acme-prod-primary"
  */
 
-import { readFileSync } from 'node:fs'
-import { loadAwsAccount, RawAccountManifest } from '../lib/iam/normalize/aws'
-import { buildEngine } from '../lib/iam/engine'
+import path from 'node:path'
+import { loadSample } from '../lib/iam/load'
 import { reachableCapabilities, whoCanReach } from '../lib/iam/escalation'
 import { analyseAccount, severityCounts } from '../lib/iam/rules'
 
-const [, , file, action, resource] = process.argv
+const [, , target, action, resource] = process.argv
 
-if (!file) {
-  console.error('usage: analyze.ts <account.json> [action] [resource]')
+if (!target) {
+  console.error('usage: analyze.ts <sample-slug | path/to/account.json> [action] [resource]')
   process.exit(1)
 }
 
-const rawText = readFileSync(file, 'utf8')
-const manifest = JSON.parse(rawText) as RawAccountManifest
-const account = loadAwsAccount(manifest, file, rawText)
-const engine = buildEngine(account)
+// Accept either a bare slug or a path, so existing invocations keep working.
+const slug = path.basename(target).replace(/\.json$/, '')
+const { engine, account } = loadSample(slug)
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
@@ -31,9 +29,12 @@ const red = (s: string) => `\x1b[31m${s}\x1b[0m`
 const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`
 
-const short = (arn: string) => {
-  const i = arn.lastIndexOf('/')
-  return i === -1 ? arn : arn.slice(i + 1)
+/** Prefer the entity's own name — an IBM `IBMid-550000BBBB` has nothing to trim. */
+const short = (id: string) => {
+  const named = engine.entity(id)?.name
+  if (named) return named
+  const i = id.lastIndexOf('/')
+  return i === -1 ? id : id.slice(i + 1)
 }
 
 console.log()

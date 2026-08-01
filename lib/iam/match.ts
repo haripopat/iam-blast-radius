@@ -94,6 +94,60 @@ export function accountOf(arn: string): string | null {
   return parseArn(arn)?.account ?? null
 }
 
+/**
+ * IBM Cloud CRN:
+ * `crn:v1:bluemix:public:cloud-object-storage:global:a/ACCT:INSTANCE::`
+ *
+ * Segments are positional and may be empty, so we index rather than split on
+ * a delimiter that also appears inside values.
+ */
+export interface ParsedCrn {
+  version: string
+  cname: string
+  ctype: string
+  service: string
+  region: string
+  scope: string
+  instance: string
+  resourceType: string
+  resource: string
+}
+
+export function parseCrn(crn: string): ParsedCrn | null {
+  if (!crn.startsWith('crn:')) return null
+  const p = crn.split(':')
+  if (p.length < 10) return null
+  return {
+    version: p[1],
+    cname: p[2],
+    ctype: p[3],
+    service: p[4],
+    region: p[5],
+    scope: p[6],
+    instance: p[7],
+    resourceType: p[8],
+    resource: p[9],
+  }
+}
+
+/**
+ * The service segment of a resource id, whichever provider it came from.
+ * Everything downstream keys off this rather than caring about ARN vs CRN.
+ */
+export function resourceService(id: string): string | null {
+  return parseArn(id)?.service ?? parseCrn(id)?.service ?? null
+}
+
+/** Account / subscription / project id for a resource id, either format. */
+export function resourceAccount(id: string): string | null {
+  const arn = parseArn(id)
+  if (arn) return arn.account
+  const crn = parseCrn(id)
+  if (!crn) return null
+  // CRN scope is `a/<account-id>` for account-scoped resources.
+  return crn.scope.startsWith('a/') ? crn.scope.slice(2) : crn.scope || null
+}
+
 /** `arn:aws:iam::123456789012:root` means "any principal in that account". */
 export function isAccountRootArn(arn: string): boolean {
   const parsed = parseArn(arn)

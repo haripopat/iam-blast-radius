@@ -26,8 +26,9 @@
 import { GoogleGenAI, ThinkingLevel } from '@google/genai'
 import { IamEngine } from './engine'
 import { ParsedQuestion } from './query'
-import { parseArn } from './match'
+import { resourceService } from './match'
 import { allKnownActions } from './actions'
+import { servicesInAccount } from './query'
 
 /**
  * Models to try, in order.
@@ -50,7 +51,9 @@ const THINKING_LEVEL = ThinkingLevel.MINIMAL
  * The closed set the model picks from — read from the shared catalogue so it
  * can never drift from what the deterministic parser and the engine know.
  */
-const KNOWN_ACTIONS = allKnownActions()
+function knownActionsFor(engine: IamEngine): string[] {
+  return allKnownActions(servicesInAccount(engine))
+}
 
 function apiKey(): string | undefined {
   return process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY
@@ -80,16 +83,17 @@ export async function parseQuestionWithModel(
 
   const inventory = resources
     .map((r) => {
-      const service = parseArn(r.id)?.service ?? 'unknown'
+      const service = resourceService(r.id) ?? 'unknown'
       const tags = r.tags ? ` tags=${JSON.stringify(r.tags)}` : ''
       return `- ${r.id}\n    name=${r.name} service=${service}${tags}`
     })
     .join('\n')
 
+  const knownActions = knownActionsFor(engine)
   const ai = new GoogleGenAI({ apiKey: key })
 
   for (const model of MODELS) {
-    const parsed = await tryModel(ai, model, engine, resources, resourceIds, inventory, question)
+    const parsed = await tryModel(ai, model, engine, resources, resourceIds, inventory, question, knownActions)
     if (parsed) return parsed
   }
   return null
@@ -102,7 +106,8 @@ async function tryModel(
   resources: ReturnType<IamEngine['entities']>,
   resourceIds: string[],
   inventory: string,
-  question: string
+  question: string,
+  knownActions: string[]
 ): Promise<ParsedQuestion | null> {
   try {
     const response = await ai.models.generateContent({
@@ -116,7 +121,7 @@ async function tryModel(
           properties: {
             action: {
               type: 'string',
-              enum: KNOWN_ACTIONS,
+              enum: knownActions,
               description: 'The IAM action the question is asking about.',
             },
             resource: {
@@ -166,7 +171,7 @@ async function tryModel(
 
     // Belt and braces: verify the model stayed inside the closed set, even
     // though the schema should already have guaranteed it.
-    if (!KNOWN_ACTIONS.includes(raw.action)) return null
+    if (!knownActions.includes(raw.action)) return null
     if (raw.resource !== '*' && !engine.entity(raw.resource)) return null
 
     return {

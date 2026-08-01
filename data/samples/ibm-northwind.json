@@ -1,0 +1,198 @@
+{
+  "provider": "ibm",
+  "id": "a1b2c3d4e5f6000000000000000000ab",
+  "name": "Northwind Analytics (IBM Cloud)",
+  "trustedAccounts": ["a1b2c3d4e5f6000000000000000000ab"],
+
+  "entities": [
+    {
+      "id": "IBMid-550000AAAA",
+      "type": "user",
+      "name": "priya",
+      "memberOf": ["AccessGroupId-platform-eng"],
+      "tags": { "title": "Platform Engineer" }
+    },
+    {
+      "id": "IBMid-550000BBBB",
+      "type": "user",
+      "name": "tom",
+      "memberOf": ["AccessGroupId-support"],
+      "tags": { "title": "Support Analyst" }
+    },
+    {
+      "id": "IBMid-550000CCCC",
+      "type": "user",
+      "name": "dana",
+      "memberOf": ["AccessGroupId-finance"],
+      "tags": { "title": "Finance Ops" }
+    },
+
+    {
+      "id": "AccessGroupId-platform-eng",
+      "type": "group",
+      "name": "platform-engineering"
+    },
+    {
+      "id": "AccessGroupId-support",
+      "type": "group",
+      "name": "support"
+    },
+    {
+      "id": "AccessGroupId-finance",
+      "type": "group",
+      "name": "finance"
+    },
+
+    {
+      "id": "iam-ServiceId-etl-pipeline",
+      "type": "service",
+      "name": "etl-pipeline"
+    },
+
+    {
+      "id": "crn:v1:bluemix:public:databases-for-postgresql:eu-gb:a/a1b2c3d4e5f6000000000000000000ab:pg-prod-01::",
+      "type": "resource",
+      "name": "northwind-prod-postgres",
+      "tags": { "env": "production", "data": "customer-pii" }
+    },
+    {
+      "id": "crn:v1:bluemix:public:cloud-object-storage:global:a/a1b2c3d4e5f6000000000000000000ab:cos-archive::",
+      "type": "resource",
+      "name": "northwind-archive-bucket",
+      "tags": { "env": "production", "data": "invoice-archive" }
+    },
+    {
+      "id": "crn:v1:bluemix:public:secrets-manager:eu-gb:a/a1b2c3d4e5f6000000000000000000ab:sm-prod::",
+      "type": "resource",
+      "name": "northwind-prod-secrets",
+      "tags": { "env": "production", "data": "service-credentials" }
+    }
+  ],
+
+  "policies": [
+    {
+      "id": "policy-support-viewer",
+      "type": "access",
+      "description": "Support can view all services",
+      "subjects": [{ "attributes": [{ "name": "access_group_id", "value": "AccessGroupId-support" }] }],
+      "roles": [{ "role_id": "crn:v1:bluemix:public:iam::::role:Viewer" }],
+      "resources": [
+        {
+          "attributes": [
+            { "name": "accountId", "value": "a1b2c3d4e5f6000000000000000000ab" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "policy-support-manage-groups",
+      "type": "access",
+      "description": "Support can manage access groups so they can onboard contractors themselves",
+      "subjects": [{ "attributes": [{ "name": "access_group_id", "value": "AccessGroupId-support" }] }],
+      "roles": [{ "role_id": "crn:v1:bluemix:public:iam::::role:Editor" }],
+      "resources": [
+        {
+          "attributes": [
+            { "name": "accountId", "value": "a1b2c3d4e5f6000000000000000000ab" },
+            { "name": "serviceName", "value": "iam-groups" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "policy-platform-eng-db-admin",
+      "type": "access",
+      "description": "Platform engineering administers the production database",
+      "subjects": [
+        { "attributes": [{ "name": "access_group_id", "value": "AccessGroupId-platform-eng" }] }
+      ],
+      "roles": [
+        { "role_id": "crn:v1:bluemix:public:iam::::role:Administrator" },
+        { "role_id": "crn:v1:bluemix:public:iam::::role:Manager" }
+      ],
+      "resources": [
+        {
+          "attributes": [
+            { "name": "accountId", "value": "a1b2c3d4e5f6000000000000000000ab" },
+            { "name": "serviceName", "value": "databases-for-postgresql" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "policy-finance-cos-reader",
+      "type": "access",
+      "description": "Finance reads the invoice archive",
+      "subjects": [
+        { "attributes": [{ "name": "access_group_id", "value": "AccessGroupId-finance" }] }
+      ],
+      "roles": [{ "role_id": "crn:v1:bluemix:public:iam::::role:Reader" }],
+      "resources": [
+        {
+          "attributes": [
+            { "name": "accountId", "value": "a1b2c3d4e5f6000000000000000000ab" },
+            { "name": "serviceName", "value": "cloud-object-storage" },
+            { "name": "serviceInstance", "value": "cos-archive" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "policy-etl-secrets-reader",
+      "type": "access",
+      "description": "ETL pipeline reads its own service credentials",
+      "subjects": [
+        { "attributes": [{ "name": "iam_id", "value": "iam-ServiceId-etl-pipeline" }] }
+      ],
+      "roles": [{ "role_id": "crn:v1:bluemix:public:iam::::role:Reader" }],
+      "resources": [
+        {
+          "attributes": [
+            { "name": "accountId", "value": "a1b2c3d4e5f6000000000000000000ab" },
+            { "name": "serviceName", "value": "secrets-manager" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "policy-etl-db-writer",
+      "type": "access",
+      "description": "ETL pipeline writes to the production database",
+      "subjects": [
+        { "attributes": [{ "name": "iam_id", "value": "iam-ServiceId-etl-pipeline" }] }
+      ],
+      "roles": [{ "role_id": "crn:v1:bluemix:public:iam::::role:Writer" }],
+      "resources": [
+        {
+          "attributes": [
+            { "name": "accountId", "value": "a1b2c3d4e5f6000000000000000000ab" },
+            { "name": "serviceName", "value": "databases-for-postgresql" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": "policy-platform-eng-identity-admin",
+      "type": "access",
+      "description": "Platform engineering manages service IDs for automation",
+      "subjects": [
+        { "attributes": [{ "name": "access_group_id", "value": "AccessGroupId-platform-eng" }] }
+      ],
+      "roles": [{ "role_id": "crn:v1:bluemix:public:iam::::role:Administrator" }],
+      "resources": [
+        {
+          "attributes": [
+            { "name": "accountId", "value": "a1b2c3d4e5f6000000000000000000ab" },
+            { "name": "serviceName", "value": "iam-identity" }
+          ]
+        }
+      ]
+    }
+  ]
+}

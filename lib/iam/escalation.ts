@@ -17,7 +17,7 @@
  */
 
 import { IamEngine } from './engine'
-import { Severity, SourceRef } from './types'
+import { Provider, Severity, SourceRef } from './types'
 
 // ---------------------------------------------------------------------------
 // Capabilities
@@ -162,12 +162,24 @@ interface Technique {
   name: string
   severity: Severity
   reference: string
+  /**
+   * Which provider's action vocabulary this technique speaks.
+   *
+   * This gating is load-bearing, not tidiness. An AWS policy using `NotAction`
+   * or a bare `*` matches ANY action string — including IBM-format names like
+   * `iam.policy.create`, which contain no colon and so are not excluded by
+   * `NotAction: ["iam:*"]`. Without this filter an AWS "allow everything
+   * except IAM" policy silently satisfies the IBM assign-access technique and
+   * reports a privilege escalation that cannot happen.
+   */
+  provider: Provider
   expand(ctx: TechniqueContext): EscalationStep[]
 }
 
 const TECHNIQUES: Technique[] = [
   {
     id: 'add-user-to-group',
+    provider: 'aws',
     name: 'Join a more privileged group',
     severity: 'high',
     reference: 'iam:AddUserToGroup',
@@ -187,7 +199,7 @@ const TECHNIQUES: Technique[] = [
             actor,
             gained: { kind: 'group', id: group.id },
             dependsOn,
-            narrative: `${short(actor)} can add any user to the ${group.name} group, including themselves, inheriting every policy attached to it.`,
+            narrative: `${nameOf(ctx.engine, actor)} can add any user to the ${group.name} group, including themselves, inheriting every policy attached to it.`,
             evidence,
             reference: this.reference,
           })
@@ -199,6 +211,7 @@ const TECHNIQUES: Technique[] = [
 
   {
     id: 'modify-own-policy',
+    provider: 'aws',
     name: 'Rewrite a policy attached to you',
     severity: 'critical',
     reference: 'iam:CreatePolicyVersion / iam:SetDefaultPolicyVersion',
@@ -238,7 +251,7 @@ const TECHNIQUES: Technique[] = [
               actor,
               gained: { kind: 'admin' },
               dependsOn,
-              narrative: `${short(actor)} can publish a new version of ${short(policyId)}, a policy already attached to them, and set it to allow everything. That is full administrator access in one API call.`,
+              narrative: `${nameOf(ctx.engine, actor)} can publish a new version of ${short(policyId)}, a policy already attached to them, and set it to allow everything. That is full administrator access in one API call.`,
               evidence: merged.evidence,
               reference: this.reference,
             })
@@ -251,6 +264,7 @@ const TECHNIQUES: Technique[] = [
 
   {
     id: 'attach-policy-to-self',
+    provider: 'aws',
     name: 'Attach an administrator policy to yourself',
     severity: 'critical',
     reference: 'iam:AttachUserPolicy / iam:PutUserPolicy',
@@ -273,7 +287,7 @@ const TECHNIQUES: Technique[] = [
             actor,
             gained: { kind: 'admin' },
             dependsOn,
-            narrative: `${short(actor)} can attach an arbitrary policy to themselves via ${action}, so they can grant themselves administrator access at any time.`,
+            narrative: `${nameOf(ctx.engine, actor)} can attach an arbitrary policy to themselves via ${action}, so they can grant themselves administrator access at any time.`,
             evidence,
             reference: this.reference,
           })
@@ -286,6 +300,7 @@ const TECHNIQUES: Technique[] = [
 
   {
     id: 'pass-role-to-compute',
+    provider: 'aws',
     name: 'Pass a role to a compute service you control',
     severity: 'critical',
     reference: 'iam:PassRole + ec2:RunInstances / lambda:CreateFunction',
@@ -329,7 +344,7 @@ const TECHNIQUES: Technique[] = [
               actor,
               gained: { kind: 'identity', id: role.id },
               dependsOn,
-              narrative: `${short(actor)} can launch ${vector.label} and attach the ${role.name} role to it. Any code running on it acts as ${role.name}, which hands them that role's permissions.`,
+              narrative: `${nameOf(ctx.engine, actor)} can launch ${vector.label} and attach the ${role.name} role to it. Any code running on it acts as ${role.name}, which hands them that role's permissions.`,
               evidence,
               reference: this.reference,
             })
@@ -343,6 +358,7 @@ const TECHNIQUES: Technique[] = [
 
   {
     id: 'assume-role',
+    provider: 'aws',
     name: 'Assume a role that trusts you',
     severity: 'medium',
     reference: 'sts:AssumeRole',
@@ -367,8 +383,8 @@ const TECHNIQUES: Technique[] = [
             gained: { kind: 'identity', id: role.id },
             dependsOn,
             narrative: wildcardTrust
-              ? `The ${role.name} role trusts every principal, so ${short(actor)} can assume it. So can anyone else who reaches this account.`
-              : `${short(actor)} is trusted by the ${role.name} role and holds sts:AssumeRole, so they can switch into it directly.`,
+              ? `The ${role.name} role trusts every principal, so ${nameOf(ctx.engine, actor)} can assume it. So can anyone else who reaches this account.`
+              : `${nameOf(ctx.engine, actor)} is trusted by the ${role.name} role and holds sts:AssumeRole, so they can switch into it directly.`,
             evidence: dedupeRefs([...evidence, ...trust.matched.map((s) => s.sourceRef)]),
             reference: this.reference,
           })
@@ -380,6 +396,7 @@ const TECHNIQUES: Technique[] = [
 
   {
     id: 'rewrite-trust-policy',
+    provider: 'aws',
     name: 'Rewrite a role trust policy to trust yourself',
     severity: 'critical',
     reference: 'iam:UpdateAssumeRolePolicy + sts:AssumeRole',
@@ -400,7 +417,7 @@ const TECHNIQUES: Technique[] = [
             actor,
             gained: { kind: 'identity', id: role.id },
             dependsOn,
-            narrative: `${short(actor)} can rewrite the ${role.name} role's trust policy to trust themselves, then assume it. The role's existing trust settings offer no protection.`,
+            narrative: `${nameOf(ctx.engine, actor)} can rewrite the ${role.name} role's trust policy to trust themselves, then assume it. The role's existing trust settings offer no protection.`,
             evidence,
             reference: this.reference,
           })
@@ -412,6 +429,7 @@ const TECHNIQUES: Technique[] = [
 
   {
     id: 'steal-credentials',
+    provider: 'aws',
     name: 'Mint credentials for another user',
     severity: 'critical',
     reference: 'iam:CreateAccessKey / iam:UpdateLoginProfile',
@@ -435,12 +453,141 @@ const TECHNIQUES: Technique[] = [
               actor,
               gained: { kind: 'identity', id: user.id },
               dependsOn,
-              narrative: `${short(actor)} can issue new credentials for ${user.name} via ${action}, letting them act as that user entirely.`,
+              narrative: `${nameOf(ctx.engine, actor)} can issue new credentials for ${user.name} via ${action}, letting them act as that user entirely.`,
               evidence,
               reference: this.reference,
             })
             break
           }
+        }
+      }
+      return steps
+    },
+  },
+]
+
+// ---------------------------------------------------------------------------
+// IBM Cloud techniques
+//
+// These check IBM-format action names (`service.resourceType.operation`), so
+// they simply never match an AWS account and the AWS techniques never match an
+// IBM one. Both lists can coexist without provider gating.
+// ---------------------------------------------------------------------------
+
+/** Does the actor hold this action anywhere, accounting for joined groups? */
+function allowsAnywhere(ctx: TechniqueContext, actor: string, action: string): Grant | null {
+  const groups = groupsFor(ctx, actor)
+  const full = ctx.engine.canAnywhere(actor, action, groups)
+  if (full.decision !== 'allow') return null
+
+  const native = ctx.engine.canAnywhere(actor, action, [])
+  if (native.decision === 'allow') {
+    return { evidence: native.matched.map((s) => s.sourceRef), deps: [] }
+  }
+  for (const group of groups) {
+    const viaGroup = ctx.engine.canAnywhere(actor, action, [group])
+    if (viaGroup.decision === 'allow') {
+      return {
+        evidence: viaGroup.matched.map((s) => s.sourceRef),
+        deps: [{ kind: 'group', id: group }],
+      }
+    }
+  }
+  return {
+    evidence: full.matched.map((s) => s.sourceRef),
+    deps: groups.map((id) => ({ kind: 'group', id }) as Capability),
+  }
+}
+
+const IBM_TECHNIQUES: Technique[] = [
+  {
+    id: 'ibm-assign-access',
+    provider: 'ibm',
+    name: 'Grant yourself access (IBM Administrator role)',
+    severity: 'critical',
+    reference: 'iam.policy.create',
+    expand(ctx) {
+      const steps: EscalationStep[] = []
+      for (const actor of ctx.identities) {
+        const grant = allowsAnywhere(ctx, actor, 'iam.policy.create')
+        if (!grant) continue
+        const { evidence, dependsOn } = mergeGrants(actor, [grant])
+        steps.push({
+          technique: this.id,
+          techniqueName: this.name,
+          severity: this.severity,
+          actor,
+          gained: { kind: 'admin' },
+          dependsOn,
+          narrative: `${nameOf(ctx.engine, actor)} holds the Administrator platform role, which in IBM Cloud includes the right to assign access to others. They can write themselves a policy granting anything. "Administrator" reads like an ordinary admin tier, but it is a self-service escalation to full control.`,
+          evidence,
+          reference: this.reference,
+        })
+      }
+      return steps
+    },
+  },
+
+  {
+    id: 'ibm-join-access-group',
+    provider: 'ibm',
+    name: 'Add yourself to an access group',
+    severity: 'high',
+    reference: 'iam-groups.*.update',
+    expand(ctx) {
+      const steps: EscalationStep[] = []
+      for (const actor of ctx.identities) {
+        const grant =
+          allowsAnywhere(ctx, actor, 'iam-groups.groups.update') ??
+          allowsAnywhere(ctx, actor, 'iam-groups.members.create')
+        if (!grant) continue
+
+        for (const group of ctx.engine.entities('group')) {
+          const entity = ctx.engine.entity(actor)
+          if (entity?.memberOf?.includes(group.id)) continue
+          const { evidence, dependsOn } = mergeGrants(actor, [grant])
+          steps.push({
+            technique: this.id,
+            techniqueName: this.name,
+            severity: this.severity,
+            actor,
+            gained: { kind: 'group', id: group.id },
+            dependsOn,
+            narrative: `${nameOf(ctx.engine, actor)} can manage access group membership, so they can add themselves to ${group.name} and inherit every policy attached to it.`,
+            evidence,
+            reference: this.reference,
+          })
+        }
+      }
+      return steps
+    },
+  },
+
+  {
+    id: 'ibm-create-service-id',
+    provider: 'ibm',
+    name: 'Create a service ID and act as it',
+    severity: 'critical',
+    reference: 'iam-identity.serviceid.create',
+    expand(ctx) {
+      const steps: EscalationStep[] = []
+      for (const actor of ctx.identities) {
+        const grant = allowsAnywhere(ctx, actor, 'iam-identity.serviceid.create')
+        if (!grant) continue
+        for (const svc of ctx.engine.entities('service')) {
+          if (svc.id === actor) continue
+          const { evidence, dependsOn } = mergeGrants(actor, [grant])
+          steps.push({
+            technique: this.id,
+            techniqueName: this.name,
+            severity: this.severity,
+            actor,
+            gained: { kind: 'identity', id: svc.id },
+            dependsOn,
+            narrative: `${nameOf(ctx.engine, actor)} can create service IDs and issue API keys for them, letting them operate as ${svc.name} with that identity's permissions.`,
+            evidence,
+            reference: this.reference,
+          })
         }
       }
       return steps
@@ -457,6 +604,27 @@ function roleTrustsService(engine: IamEngine, roleId: string, service: string): 
     }
   }
   return false
+}
+
+/**
+ * Every technique, both providers. An AWS technique's action names never match
+ * an IBM policy and vice versa, so running the full list against either
+ * account is correct as well as simpler than gating on provider.
+ */
+const ALL_TECHNIQUES: Technique[] = [...TECHNIQUES, ...IBM_TECHNIQUES]
+
+/** Only the techniques whose action vocabulary matches this account. */
+function techniquesFor(provider: Provider): Technique[] {
+  return ALL_TECHNIQUES.filter((t) => t.provider === provider)
+}
+
+/**
+ * Display name for a principal. AWS ARNs end in something human-readable, but
+ * an IBM `IBMid-550000BBBB` does not — so prefer the entity's own name and
+ * fall back to trimming the identifier.
+ */
+function nameOf(engine: IamEngine, id: string): string {
+  return engine.entity(id)?.name ?? short(id)
 }
 
 export function short(arn: string): string {
@@ -527,7 +695,7 @@ export function reachableCapabilities(
     const ctx: TechniqueContext = { engine, start: principalId, identities, groups }
     let changed = false
 
-    for (const technique of TECHNIQUES) {
+    for (const technique of techniquesFor(engine.account.provider)) {
       for (const step of technique.expand(ctx)) {
         const key = capKey(step.gained)
         if (caps.has(key)) continue

@@ -18,6 +18,7 @@
 import { IamEngine } from '../engine'
 import { escalationRoutes, reachableCapabilities, short } from '../escalation'
 import { Finding, Policy, Severity, Statement } from '../types'
+import { parseCrn } from '../match'
 
 interface Rule {
   id: string
@@ -334,6 +335,79 @@ const RULES: Rule[] = [
             'Add a Bool condition on aws:MultiFactorAuthPresent to the trust policy, and alert on every assumption of this role.',
           principals: [role.id],
           evidence: trust.map((s) => s.sourceRef),
+          confidence: 'certain',
+        })
+      }
+      return findings
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // IBM Cloud. These key off the normalised shape rather than the provider
+  // flag, so they simply never match an AWS statement.
+  // -------------------------------------------------------------------------
+  {
+    id: 'ibm-account-wide-policy',
+    run(engine) {
+      const findings: Finding[] = []
+      for (const { policy, statement } of statementsOf(engine)) {
+        if (policy.provider !== 'ibm') continue
+        if (statement.effect !== 'Allow') continue
+        // No serviceName attribute normalises to a `*` service segment, which
+        // means the policy covers every IAM-enabled service in the account.
+        if (statement.resources.every((r) => parseCrn(r)?.service !== '*')) continue
+
+        const holders = holdersOf(engine, policy.id)
+        findings.push({
+          id: `ibm-account-wide-policy:${statement.id}`,
+          rule: this.id,
+          severity: 'high',
+          title: `${policy.name} applies to every service in the account`,
+          description:
+            `This policy sets no serviceName attribute. In IBM Cloud an omitted attribute means "any", ` +
+            `so rather than scoping to one service it grants these roles across every IAM-enabled service ` +
+            `in the account — including ones added in future. This is easy to misread as narrow. ` +
+            `${holders.length > 0 ? `Held by ${holders.map((h) => engine.entity(h)?.name ?? short(h)).join(', ')}.` : ''}`,
+          remediation:
+            'Add a serviceName attribute to scope the policy, and a serviceInstance attribute if only one instance is intended. ' +
+            'Grant per-service policies rather than one account-wide policy.',
+          principals: holders,
+          evidence: [statement.sourceRef],
+          confidence: 'certain',
+        })
+      }
+      return findings
+    },
+  },
+
+  {
+    id: 'ibm-assign-access-role',
+    run(engine) {
+      const findings: Finding[] = []
+      for (const { policy, statement } of statementsOf(engine)) {
+        if (policy.provider !== 'ibm') continue
+        if (statement.effect !== 'Allow') continue
+        // The Administrator platform role is the only one that expands to
+        // include policy creation.
+        if (!statement.actions.includes('iam.policy.create')) continue
+
+        const holders = holdersOf(engine, policy.id)
+        findings.push({
+          id: `ibm-assign-access-role:${statement.id}`,
+          rule: this.id,
+          severity: 'critical',
+          title: `${policy.name} grants the Administrator role, which includes assigning access`,
+          description:
+            `In IBM Cloud the Administrator platform role carries the right to create access policies, ` +
+            `not just to manage the resource. Anyone holding it can write themselves a policy granting ` +
+            `anything else in the account, so this is effectively unbounded access however narrowly the ` +
+            `rest of the policy is scoped. ` +
+            `${holders.length > 0 ? `Held by ${holders.map((h) => engine.entity(h)?.name ?? short(h)).join(', ')}.` : ''}`,
+          remediation:
+            'Use Editor for people who need to manage the resource but not delegate access. ' +
+            'Reserve Administrator for a small, audited group, and alert on iam.policy.create.',
+          principals: holders,
+          evidence: [statement.sourceRef],
           confidence: 'certain',
         })
       }

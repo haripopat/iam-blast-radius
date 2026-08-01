@@ -18,7 +18,7 @@
 
 import { IamEngine } from './engine'
 import { escalationRoutes, EscalationRoute, short } from './escalation'
-import { parseArn } from './match'
+import { parseArn, resourceService } from './match'
 import { SourceRef } from './types'
 import { actionFor, detectVerb, serviceForToken, ServiceActions, VerbClass } from './actions'
 
@@ -48,10 +48,20 @@ function tokens(text: string): string[] {
     .filter((t) => t.length > 2 && !STOP_WORDS.has(t))
 }
 
+/** The service names this account actually contains resources for. */
+export function servicesInAccount(engine: IamEngine): Set<string> {
+  const out = new Set<string>()
+  for (const e of engine.entities('resource')) {
+    const svc = resourceService(e.id)
+    if (svc) out.add(svc)
+  }
+  return out
+}
+
 /** Which service, if any, did the question name? First alias hit wins. */
-function detectService(question: string): ServiceActions | undefined {
+function detectService(question: string, present: Set<string>): ServiceActions | undefined {
   for (const token of tokens(question)) {
-    const svc = serviceForToken(token)
+    const svc = serviceForToken(token, present)
     if (svc) return svc
   }
   return undefined
@@ -68,7 +78,7 @@ function rankResources(engine: IamEngine, question: string, named?: ServiceActio
   return engine
     .entities('resource')
     .map((entity) => {
-      const service = parseArn(entity.id)?.service ?? ''
+      const service = resourceService(entity.id) ?? ''
       const haystack = [
         entity.name,
         entity.id,
@@ -92,13 +102,13 @@ function rankResources(engine: IamEngine, question: string, named?: ServiceActio
 
 export function parseQuestion(engine: IamEngine, question: string): ParsedQuestion {
   const verb = detectVerb(question)
-  const named = detectService(question)
+  const named = detectService(question, servicesInAccount(engine))
   const ranked = rankResources(engine, question, named)
 
   // The question named a service we understand, but this account has no
   // resource of that kind. Say so rather than answering about the nearest
   // unrelated resource — a wrong target is worse than an honest miss.
-  if (named && !ranked.some((r) => parseArn(r.entity.id)?.service === named.service)) {
+  if (named && !ranked.some((r) => resourceService(r.entity.id) === named.service)) {
     const action = actionFor(named.service, verb)
     return {
       action,
@@ -125,7 +135,7 @@ export function parseQuestion(engine: IamEngine, question: string): ParsedQuesti
   }
 
   const best = ranked[0]
-  const service = parseArn(best.entity.id)?.service ?? 'iam'
+  const service = resourceService(best.entity.id) ?? 'iam'
   const action = actionFor(service, verb)
 
   return {
