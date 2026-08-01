@@ -143,8 +143,28 @@ export class IamEngine {
     opts: EvaluateOptions = {},
     extraGroups: string[] = []
   ): EvaluationResult {
-    const statements = this.identityStatements(principalId, extraGroups)
+    const statements = [
+      ...this.identityStatements(principalId, extraGroups),
+      ...this.applicableResourceStatements(principalId, resource),
+    ]
     return this.evaluateStatements(statements, action, resource, opts)
+  }
+
+  /**
+   * Resource-policy statements that name this principal.
+   *
+   * Within an account, a resource policy grants on its own — an S3 bucket
+   * policy naming a role gives that role access whether or not any identity
+   * policy mentions the bucket. Evaluating identity policies alone therefore
+   * *under*-reports, which for this tool is the worse direction to be wrong
+   * in: it would show a resource as unreachable while a bucket policy quietly
+   * hands it out.
+   */
+  private applicableResourceStatements(principalId: string, resource: string): Statement[] {
+    if (resource === '*') return []
+    return this.resourceStatements(resource).filter((stmt) =>
+      statementMatchesPrincipal(stmt, principalId, this)
+    )
   }
 
   evaluateStatements(
