@@ -17,7 +17,8 @@ const SEVERITY_STYLE: Record<Severity, { dot: string; text: string; badge: strin
 
 const EXAMPLES = [
   'Who can delete the production database?',
-  'Who can read the backups bucket?',
+  'Who can read our secrets?',
+  'Who can decrypt the backups?',
   'Who can become an administrator?',
 ]
 

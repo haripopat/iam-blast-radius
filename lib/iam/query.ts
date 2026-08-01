@@ -20,53 +20,9 @@ import { IamEngine } from './engine'
 import { escalationRoutes, EscalationRoute, short } from './escalation'
 import { parseArn } from './match'
 import { SourceRef } from './types'
+import { actionFor, detectVerb, serviceForToken, ServiceActions, VerbClass } from './actions'
 
-export type VerbClass = 'delete' | 'read' | 'write' | 'admin'
-
-const VERB_PATTERNS: { pattern: RegExp; verb: VerbClass }[] = [
-  { pattern: /\b(delete|drop|destroy|remove|terminate|wipe|purge)\b/i, verb: 'delete' },
-  { pattern: /\b(read|access|download|view|see|get|list|exfiltrate|steal)\b/i, verb: 'read' },
-  { pattern: /\b(write|modify|change|update|edit|upload|put)\b/i, verb: 'write' },
-  { pattern: /\b(admin|administrator|full control|anything|everything|take over)\b/i, verb: 'admin' },
-]
-
-/**
- * Concrete actions per service. Deliberately a small, curated table rather
- * than the full AWS action catalogue: a wrong action name produces a
- * confidently wrong answer, so we only claim the ones we are sure of.
- */
-const ACTION_TABLE: Record<string, Record<VerbClass, string>> = {
-  rds: {
-    delete: 'rds:DeleteDBCluster',
-    read: 'rds:DescribeDBClusters',
-    write: 'rds:ModifyDBCluster',
-    admin: 'rds:*',
-  },
-  s3: {
-    delete: 's3:DeleteObject',
-    read: 's3:GetObject',
-    write: 's3:PutObject',
-    admin: 's3:*',
-  },
-  ec2: {
-    delete: 'ec2:TerminateInstances',
-    read: 'ec2:DescribeInstances',
-    write: 'ec2:RunInstances',
-    admin: 'ec2:*',
-  },
-  iam: {
-    delete: 'iam:DeleteUser',
-    read: 'iam:GetUser',
-    write: 'iam:CreateUser',
-    admin: 'iam:*',
-  },
-  dynamodb: {
-    delete: 'dynamodb:DeleteTable',
-    read: 'dynamodb:GetItem',
-    write: 'dynamodb:PutItem',
-    admin: 'dynamodb:*',
-  },
-}
+export type { VerbClass }
 
 const STOP_WORDS = new Set([
   'who', 'can', 'what', 'which', 'the', 'a', 'an', 'is', 'are', 'to', 'on', 'in',
@@ -92,28 +48,33 @@ function tokens(text: string): string[] {
     .filter((t) => t.length > 2 && !STOP_WORDS.has(t))
 }
 
-function detectVerb(question: string): VerbClass {
-  for (const { pattern, verb } of VERB_PATTERNS) {
-    if (pattern.test(question)) return verb
+/** Which service, if any, did the question name? First alias hit wins. */
+function detectService(question: string): ServiceActions | undefined {
+  for (const token of tokens(question)) {
+    const svc = serviceForToken(token)
+    if (svc) return svc
   }
-  return 'admin'
+  return undefined
 }
 
 /**
  * Score each resource in the account against the question by token overlap
- * over its name, ARN and tags.
+ * over its name, ARN and tags. A resource whose service the question named
+ * gets a large bonus, so "delete the backups bucket" beats a same-tagged
+ * database on the word "production" alone.
  */
-function rankResources(engine: IamEngine, question: string) {
+function rankResources(engine: IamEngine, question: string, named?: ServiceActions) {
   const qTokens = tokens(question)
-  const scored = engine
+  return engine
     .entities('resource')
     .map((entity) => {
+      const service = parseArn(entity.id)?.service ?? ''
       const haystack = [
         entity.name,
         entity.id,
         ...Object.values(entity.tags ?? {}),
         ...Object.keys(entity.tags ?? {}),
-        parseArn(entity.id)?.service ?? '',
+        service,
       ]
         .join(' ')
         .toLowerCase()
@@ -121,36 +82,51 @@ function rankResources(engine: IamEngine, question: string) {
       let score = 0
       for (const token of qTokens) {
         if (haystack.includes(token)) score += 2
-        // "database" should match an rds resource, "bucket" an s3 one
-        else if (token.startsWith('databas') && haystack.includes('rds')) score += 2
-        else if ((token === 'bucket' || token === 'backup') && haystack.includes('s3')) score += 2
       }
+      if (named && service === named.service) score += 5
       return { entity, score }
     })
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score)
-
-  return scored
 }
 
 export function parseQuestion(engine: IamEngine, question: string): ParsedQuestion {
   const verb = detectVerb(question)
-  const ranked = rankResources(engine, question)
+  const named = detectService(question)
+  const ranked = rankResources(engine, question, named)
+
+  // The question named a service we understand, but this account has no
+  // resource of that kind. Say so rather than answering about the nearest
+  // unrelated resource — a wrong target is worse than an honest miss.
+  if (named && !ranked.some((r) => parseArn(r.entity.id)?.service === named.service)) {
+    const action = actionFor(named.service, verb)
+    return {
+      action,
+      resource: '*',
+      interpretation: `Who can perform ${action} anywhere in the account (no ${named.label} is defined here)`,
+      confidence: 'inferred',
+      alternatives: ranked.slice(0, 3).map((r) => ({
+        label: r.entity.name,
+        resource: r.entity.id,
+      })),
+    }
+  }
 
   if (ranked.length === 0) {
-    // No resource matched. Ask about the account as a whole rather than
+    // Nothing matched at all. Ask about the account as a whole rather than
     // inventing a target.
+    const action = actionFor(named?.service ?? 'iam', verb)
     return {
-      action: ACTION_TABLE.iam[verb] ?? '*',
+      action,
       resource: '*',
-      interpretation: `Who can perform ${ACTION_TABLE.iam[verb] ?? '*'} on any resource in the account`,
+      interpretation: `Who can perform ${action} on any resource in the account`,
       confidence: 'inferred',
     }
   }
 
   const best = ranked[0]
   const service = parseArn(best.entity.id)?.service ?? 'iam'
-  const action = ACTION_TABLE[service]?.[verb] ?? `${service}:*`
+  const action = actionFor(service, verb)
 
   return {
     action,

@@ -79,6 +79,18 @@
       "type": "resource",
       "name": "acme-prod-backups",
       "tags": { "env": "production", "data": "database-backups" }
+    },
+    {
+      "id": "arn:aws:secretsmanager:eu-west-1:123456789012:secret:acme-prod-db-credentials",
+      "type": "resource",
+      "name": "acme-prod-db-credentials",
+      "tags": { "env": "production", "data": "db-master-password" }
+    },
+    {
+      "id": "arn:aws:kms:eu-west-1:123456789012:key/7b2c1e44-9f3a-4d21-b8e6-2c5a19d40f11",
+      "type": "resource",
+      "name": "acme-backup-encryption-key",
+      "tags": { "env": "production", "purpose": "backup-encryption" }
     }
   ],
 
@@ -194,6 +206,18 @@
             "Effect": "Allow",
             "Action": "s3:*",
             "Resource": ["arn:aws:s3:::acme-prod-backups", "arn:aws:s3:::acme-prod-backups/*"]
+          },
+          {
+            "Sid": "ReadDbCredentials",
+            "Effect": "Allow",
+            "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+            "Resource": "arn:aws:secretsmanager:eu-west-1:123456789012:secret:acme-prod-db-credentials"
+          },
+          {
+            "Sid": "DecryptBackups",
+            "Effect": "Allow",
+            "Action": ["kms:Decrypt", "kms:GenerateDataKey"],
+            "Resource": "arn:aws:kms:eu-west-1:123456789012:key/7b2c1e44-9f3a-4d21-b8e6-2c5a19d40f11"
           }
         ]
       }

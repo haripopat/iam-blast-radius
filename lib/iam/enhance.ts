@@ -27,33 +27,15 @@ import Anthropic from '@anthropic-ai/sdk'
 import { IamEngine } from './engine'
 import { ParsedQuestion } from './query'
 import { parseArn } from './match'
+import { allKnownActions } from './actions'
 
 const MODEL = 'claude-opus-5'
 
-/** Actions we are willing to claim we understand. Mirrors query.ts's table. */
-const KNOWN_ACTIONS = [
-  'rds:DeleteDBCluster',
-  'rds:DescribeDBClusters',
-  'rds:ModifyDBCluster',
-  'rds:*',
-  's3:DeleteObject',
-  's3:GetObject',
-  's3:PutObject',
-  's3:*',
-  'ec2:TerminateInstances',
-  'ec2:DescribeInstances',
-  'ec2:RunInstances',
-  'ec2:*',
-  'iam:DeleteUser',
-  'iam:GetUser',
-  'iam:CreateUser',
-  'iam:*',
-  'dynamodb:DeleteTable',
-  'dynamodb:GetItem',
-  'dynamodb:PutItem',
-  'dynamodb:*',
-  '*',
-]
+/**
+ * The closed set the model picks from — read from the shared catalogue so it
+ * can never drift from what the deterministic parser and the engine know.
+ */
+const KNOWN_ACTIONS = allKnownActions()
 
 /**
  * Ask Claude to turn a question into an (action, resource) pair.
