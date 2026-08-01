@@ -68,28 +68,26 @@ export function Dot({ colour, pulse = false }: { colour: string; pulse?: boolean
 }
 
 /**
- * Numbered section rule. The numeral and the hairline give the page an
- * instrument-panel rhythm rather than a stack of identical cards.
+ * Section rule. Deliberately quiet: a small label and a hairline.
+ *
+ * This used to carry a big display numeral and a sentence of explanation per
+ * section, which meant three lines of chrome before every piece of actual
+ * content and a numbering scheme the reader had to track. A section marker
+ * should tell you where you are, not compete with what you came to read.
  */
 export function SectionHeading({
-  index,
   title,
-  note,
   right,
 }: {
-  index: string
   title: string
-  note?: string
   right?: ReactNode
 }) {
   return (
-    <div className="mb-4 flex items-end gap-4">
-      <span className="numeral text-2xl leading-none text-ink-faint/60">{index}</span>
-      <div className="min-w-0">
-        <h2 className="display text-[17px] leading-none text-ink">{title}</h2>
-        {note && <p className="mt-1.5 text-[12.5px] leading-none text-ink-dim">{note}</p>}
-      </div>
-      <div className="hairline mb-1.5 min-w-6 flex-1" />
+    <div className="mb-3 flex items-center gap-3">
+      <h2 className="text-[11px] font-semibold tracking-[0.14em] text-ink-dim uppercase">
+        {title}
+      </h2>
+      <div className="hairline min-w-6 flex-1" />
       {right}
     </div>
   )

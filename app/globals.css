@@ -22,9 +22,12 @@
   --color-line: #1a222f;
   --color-line-2: #232e3f;
 
-  --color-ink: #e9eef7;
-  --color-ink-dim: #8593a8;
-  --color-ink-faint: #4d5a6d;
+  /* Three text levels, no more. The dim and faint steps were originally two
+     shades darker and put most of the page's prose below comfortable reading
+     contrast on this background. */
+  --color-ink: #edf2f9;
+  --color-ink-dim: #9dabc0;
+  --color-ink-faint: #66748a;
 
   --color-cold: #4fd8c4;
   --color-cold-deep: #12a595;
@@ -85,8 +88,9 @@ body {
 
 /* --- atmosphere ---------------------------------------------------------- */
 
-/* Two blooms, one per temperature, anchored where each side of the page lives.
-   The grid is a faint blueprint; the grain kills banding across the blooms. */
+/* One bloom per temperature and nothing else. There was a blueprint grid and a
+   third bloom here; together with the grain they put texture behind every piece
+   of small text on the page, which is exactly where texture hurts most. */
 .atmosphere::before {
   content: "";
   position: fixed;
@@ -94,23 +98,8 @@ body {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(1100px 620px at 8% -12%, rgba(79, 216, 196, 0.11), transparent 68%),
-    radial-gradient(900px 700px at 96% 4%, rgba(255, 74, 92, 0.085), transparent 66%),
-    radial-gradient(1200px 900px at 50% 110%, rgba(79, 216, 196, 0.05), transparent 70%);
-}
-
-.atmosphere::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.5;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
-  background-size: 52px 52px;
-  mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, #000 20%, transparent 78%);
+    radial-gradient(1000px 560px at 6% -14%, rgba(79, 216, 196, 0.075), transparent 66%),
+    radial-gradient(820px 620px at 97% 2%, rgba(255, 74, 92, 0.06), transparent 64%);
 }
 
 .grain {
@@ -118,7 +107,7 @@ body {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  opacity: 0.038;
+  opacity: 0.022;
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
 }
@@ -157,30 +146,6 @@ body {
   box-shadow:
     inset 0 1px 0 rgba(79, 216, 196, 0.06),
     0 22px 50px -34px rgba(0, 0, 0, 0.9);
-}
-
-/* Instrument corner ticks. A texture cue — they mark a panel as a readout
-   rather than a card. */
-.ticks::before,
-.ticks::after {
-  content: "";
-  position: absolute;
-  width: 9px;
-  height: 9px;
-  pointer-events: none;
-  opacity: 0.5;
-}
-.ticks::before {
-  top: 7px;
-  left: 7px;
-  border-top: 1px solid currentColor;
-  border-left: 1px solid currentColor;
-}
-.ticks::after {
-  bottom: 7px;
-  right: 7px;
-  border-bottom: 1px solid currentColor;
-  border-right: 1px solid currentColor;
 }
 
 .hairline {

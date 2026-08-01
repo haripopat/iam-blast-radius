@@ -42,11 +42,6 @@ export function Explorer({
     answerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [answer])
 
-  const counts = analysis.findings.reduce<Record<string, number>>((acc, f) => {
-    acc[f.severity] = (acc[f.severity] ?? 0) + 1
-    return acc
-  }, {})
-
   const principalCount = analysis.entities.filter((e) =>
     ['user', 'role', 'group'].includes(e.type)
   ).length
@@ -100,7 +95,7 @@ export function Explorer({
           provider={analysis.provider}
           statementCount={analysis.statementCount}
           principalCount={principalCount}
-          counts={counts}
+          findingCount={analysis.findings.length}
           onChangeSample={changeSample}
           onPaste={() => {
             setPasteOpen((v) => !v)
@@ -110,29 +105,25 @@ export function Explorer({
           busy={pending}
         />
 
-        <main className="min-w-0 flex-1 space-y-10 px-6 pt-4 pb-20 lg:px-10 lg:pt-10 xl:px-14">
-          {/* The claim the rest of the page has to earn. */}
-          <header className="rise max-w-[54ch]">
-            <div className="label mb-4 flex flex-wrap items-center gap-2">
-              <span className="text-cold">{analysis.accountName}</span>
-              <span className="text-ink-faint">/</span>
-              <span>{analysis.provider.toUpperCase()}</span>
-              <span className="text-ink-faint">/</span>
-              <span>{analysis.statementCount} statements</span>
-            </div>
-            <h1 className="display text-[clamp(25px,3.2vw,38px)] leading-[1.1]">
-              <span className="text-ink-dim">
-                Every other tool tells you who holds a permission.
-              </span>{' '}
-              <span className="text-ink">
-                This tells you who can{' '}
-                <span className="text-hot" style={{ textShadow: '0 0 34px rgba(255,74,92,.45)' }}>
-                  take
+        <main className="min-w-0 flex-1 space-y-9 px-6 pt-6 pb-20 lg:px-10 lg:pt-10 xl:px-14">
+          {/* The pitch is for arrival. Once there is a real answer on the page it
+              stands down, rather than sitting above the thing you came for. */}
+          {!answer && (
+            <header className="rise max-w-[46ch]">
+              <h1 className="display text-[clamp(24px,3vw,34px)] leading-[1.12]">
+                <span className="text-ink-dim">
+                  Every other tool tells you who holds a permission.
                 </span>{' '}
-                it.
-              </span>
-            </h1>
-          </header>
+                <span className="text-ink">
+                  This tells you who can{' '}
+                  <span className="text-hot" style={{ textShadow: '0 0 34px rgba(255,74,92,.45)' }}>
+                    take
+                  </span>{' '}
+                  it.
+                </span>
+              </h1>
+            </header>
+          )}
 
           {pasteOpen && (
             <PastePanel
@@ -149,33 +140,24 @@ export function Explorer({
           )}
 
           <section className="rise" style={{ animationDelay: '80ms' }}>
-            <SectionHeading
-              index="01"
-              title="Ask"
-              note="Plain English in, an (action, resource) pair out. The engine answers, not the model."
-            />
             <QueryBar value={question} onChange={setQuestion} onSubmit={submit} busy={pending} />
           </section>
 
           {answer && (
-            <div ref={answerRef} className="scroll-mt-6 space-y-10">
-              <section>
-                <SectionHeading
-                  index="02"
-                  title="Verdict"
-                  note="Two lists. Only one of them shows up in a permissions report."
-                />
-                <AnswerPanel
-                  answer={answer}
-                  onPickResource={(resource) => submit(answer.question, resource)}
-                />
-              </section>
+            <div ref={answerRef} className="scroll-mt-6 space-y-9">
+              <AnswerPanel
+                answer={answer}
+                onPickResource={(resource) => submit(answer.question, resource)}
+              />
 
               <section>
                 <SectionHeading
-                  index="03"
                   title="Blast radius"
-                  note="Cold is the account as designed. Hot is what the engine proved."
+                  right={
+                    <span className="hidden text-[12px] text-ink-faint sm:block">
+                      red is what nobody granted
+                    </span>
+                  }
                 />
                 <BlastRadiusGraph entities={analysis.entities} answer={answer} />
               </section>
@@ -184,9 +166,12 @@ export function Explorer({
 
           <section>
             <SectionHeading
-              index={answer ? '04' : '02'}
               title="Findings"
-              note={`${analysis.findings.length} across ${analysis.statementCount} statements, independent of any question.`}
+              right={
+                <span className="hidden text-[12px] text-ink-faint sm:block">
+                  this account, independent of any question
+                </span>
+              }
             />
             <FindingsPanel findings={analysis.findings} />
           </section>

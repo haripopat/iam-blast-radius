@@ -44,7 +44,7 @@ export function QueryBar({
   return (
     <div>
       <div
-        className={`panel ticks text-cold/25 flex items-center gap-3 rounded-2xl px-4 py-3 sm:px-5 ${
+        className={`panel flex items-center gap-3 rounded-2xl px-4 py-3 sm:px-5 ${
           busy ? 'scanning' : ''
         }`}
       >

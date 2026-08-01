@@ -1,78 +1,66 @@
 'use client'
 
 /**
- * The answer, in two temperatures.
+ * The answer.
  *
- * Left is cold: principals a permissions report would already have told you
- * about. Right is hot: principals no policy grants, who can take the action
- * anyway. The asymmetry is the product — the hot side is the only one that
- * glows, and it is the only one that carries a route.
+ * One sentence, then two lists. An earlier version of this panel restated the
+ * same counts five times over — an interpretation block, a prose summary, four
+ * stat tiles, and then the lists themselves — which made a simple answer look
+ * like a dashboard. The sentence is the answer; everything below it is only
+ * there to name names and show receipts.
+ *
+ * The two lists stay side by side because the contrast between them is the
+ * product: left is what a permissions report would tell you, right is what it
+ * would miss.
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Answer, DirectAccess, IndirectAccess } from '@/lib/iam/query'
 import type { EscalationRoute } from '@/lib/iam/escalation'
 import { Dot, Evidence, Tag, shortName } from './ui'
 
-function useCountUp(target: number, duration = 650) {
-  const [n, setN] = useState(target)
-  useEffect(() => {
-    let raf = 0
-    const start = performance.now()
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / duration)
-      setN(Math.round(target * (1 - Math.pow(1 - p, 3))))
-      if (p < 1) raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [target, duration])
-  return n
-}
+/**
+ * The headline, built from the same two arrays the lists render, so it cannot
+ * drift from what is shown underneath it.
+ */
+function Headline({ answer }: { answer: Answer }) {
+  const d = answer.direct.length
+  const i = answer.indirect.length
+  const cold = 'text-cold'
+  const hot = 'text-hot'
 
-function Stat({
-  label,
-  value,
-  suffix,
-  tone,
-  note,
-  delay,
-}: {
-  label: string
-  value: number | null
-  suffix?: string
-  tone: 'cold' | 'hot' | 'neutral'
-  note: string
-  delay: number
-}) {
-  const shown = useCountUp(value ?? 0)
-  const colour =
-    tone === 'hot' ? 'var(--color-hot)' : tone === 'cold' ? 'var(--color-cold)' : 'var(--color-ink)'
+  if (d === 0 && i === 0) {
+    return (
+      <p className="display text-[clamp(21px,2.3vw,30px)] leading-[1.25] text-ink">
+        Nobody can do this, directly or by escalating.
+      </p>
+    )
+  }
 
   return (
-    <div
-      className={`rise ticks relative overflow-hidden rounded-xl border p-4 ${
-        tone === 'hot' ? 'panel-hot' : 'panel'
-      }`}
-      style={{
-        animationDelay: `${delay}ms`,
-        color: `color-mix(in oklab, ${colour} 30%, transparent)`,
-      }}
-    >
-      <div className="label">{label}</div>
-      <div className="mt-3 flex items-baseline gap-1.5">
-        <span className="numeral text-[38px] leading-[0.85]" style={{ color: colour }}>
-          {value === null ? '—' : shown}
+    <p className="display text-[clamp(21px,2.3vw,30px)] leading-[1.25]">
+      {d === 0 ? (
+        <span className="text-ink-dim">Nobody is granted this. </span>
+      ) : (
+        <span className="text-ink-dim">
+          <span className={cold}>{d}</span> {d === 1 ? 'principal holds' : 'principals hold'} this.{' '}
         </span>
-        {suffix && value !== null && (
-          <span className="font-mono text-[11px] text-ink-dim">{suffix}</span>
-        )}
-      </div>
-      <p className="mt-2.5 text-[11.5px] leading-snug text-ink-dim">{note}</p>
-    </div>
+      )}
+      {i === 0 ? (
+        <span className="text-ink">Nobody else can reach it.</span>
+      ) : (
+        <span className="text-ink">
+          <span className={hot} style={{ textShadow: '0 0 30px rgba(255,74,92,.4)' }}>
+            {i}
+          </span>{' '}
+          {d === 0 ? (i === 1 ? 'can' : 'can') : i === 1 ? 'more can' : 'more can'} take it anyway.
+        </span>
+      )}
+    </p>
   )
 }
 
+/** What we searched for. One quiet line — it is a caption, not a finding. */
 function Interpretation({
   answer,
   onPickResource,
@@ -84,39 +72,30 @@ function Interpretation({
   const exact = parsed.confidence === 'exact'
 
   return (
-    <div className="panel rise rounded-xl p-4 sm:p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="label">Read as</span>
-        <Tag
-          colour={parsedBy === 'model' ? 'var(--color-amber)' : 'var(--color-cold)'}
+    <div>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 font-mono text-[12px]">
+        <span className="text-cold">{parsed.action}</span>
+        <span className="text-ink-faint">on</span>
+        <span className="max-w-full truncate text-ink-dim" title={parsed.resource}>
+          {shortName(parsed.resource)}
+        </span>
+        <span className="text-ink-faint">·</span>
+        <span
+          className="text-ink-faint"
           title={
             parsedBy === 'model'
               ? 'Gemini turned your question into this query, choosing from a fixed list of resources in this account. It did not answer it — the engine did.'
               : 'Parsed by the built-in rules. No model was called.'
           }
         >
-          {parsedBy === 'model' ? 'parsed by gemini' : 'parsed by rules'}
-        </Tag>
-        <Tag colour={exact ? 'var(--color-cold)' : 'var(--color-amber)'}>{parsed.confidence}</Tag>
-      </div>
-
-      <p className="display mt-3 text-[19px] leading-snug text-ink">{parsed.interpretation}</p>
-
-      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 font-mono text-[11.5px]">
-        <span className="rounded-md border border-line-2 bg-white/[0.02] px-2 py-1 text-cold">
-          {parsed.action}
+          read by {parsedBy === 'model' ? 'gemini' : 'rules'}
         </span>
-        <span className="text-ink-faint">on</span>
-        <span className="max-w-full truncate rounded-md border border-line-2 bg-white/[0.02] px-2 py-1 text-ink-dim">
-          {parsed.resource}
-        </span>
+        {!exact && <Tag colour="var(--color-amber)">inferred</Tag>}
       </div>
 
       {!exact && (parsed.alternatives?.length ?? 0) > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-          <span className="text-[12.5px] text-ink-dim">
-            More than one resource matched. Did you mean
-          </span>
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          <span className="text-[13px] text-ink-dim">Did you mean</span>
           {parsed.alternatives!.map((alt) => (
             <button
               key={alt.resource}
@@ -129,26 +108,21 @@ function Interpretation({
           ))}
         </div>
       )}
-
-      <p className="mt-4 border-t border-line pt-3.5 text-[13.5px] leading-relaxed text-[#c3cede]">
-        {answer.summary}
-      </p>
     </div>
   )
 }
 
 function DirectRow({ entry }: { entry: DirectAccess }) {
   const [open, setOpen] = useState(false)
-  const ref = entry.evidence[0]
 
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-white/[0.012]">
+    <div className="overflow-hidden rounded-lg border border-line bg-white/[0.015]">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03]"
+        className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left transition-colors hover:bg-white/[0.035]"
       >
         <Dot colour="var(--color-cold)" />
-        <span className="truncate font-mono text-[13px] text-ink">{entry.name}</span>
+        <span className="truncate font-mono text-[14px] text-ink">{entry.name}</span>
         {entry.guardedBy && (
           <Tag
             colour="var(--color-amber)"
@@ -157,30 +131,24 @@ function DirectRow({ entry }: { entry: DirectAccess }) {
             conditional
           </Tag>
         )}
-        <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-faint">
-          {open ? '−' : '+'}
+        <span className="ml-auto shrink-0 font-mono text-[12px] text-ink-faint">
+          {open ? 'hide' : 'why'}
         </span>
       </button>
 
       {entry.guardedBy && (
-        <div className="border-t border-line px-3 py-2 font-mono text-[10.5px] leading-relaxed text-amber">
+        <div className="border-t border-line px-3.5 py-2 font-mono text-[11.5px] leading-relaxed text-amber">
           only when{' '}
-          {entry.guardedBy.map((c) => `${c.key} ${c.operator} ${c.values.join(' or ')}`).join(' and ')}
+          {entry.guardedBy
+            .map((c) => `${c.key} ${c.operator} ${c.values.join(' or ')}`)
+            .join(' and ')}
         </div>
       )}
 
-      {open ? (
-        <div className="border-t border-line px-3 pb-3">
+      {open && (
+        <div className="border-t border-line px-3.5 pb-3.5">
           <Evidence refs={entry.evidence.slice(0, 3)} />
         </div>
-      ) : (
-        ref && (
-          <div className="truncate border-t border-line px-3 py-1.5 font-mono text-[10px] text-ink-faint">
-            {ref.file}
-            {ref.pointer}
-            {ref.line ? ` · L${ref.line}` : ''}
-          </div>
-        )
       )}
     </div>
   )
@@ -189,43 +157,39 @@ function DirectRow({ entry }: { entry: DirectAccess }) {
 /** One proved chain, drawn as a descent. Each rung is an independent allow. */
 function RouteTimeline({ route, action }: { route: EscalationRoute; action: string }) {
   return (
-    <ol className="relative space-y-4 pl-1">
+    <ol className="relative space-y-4">
       <span
         aria-hidden
-        className="absolute top-3 bottom-3 left-[12px] w-px"
+        className="absolute top-3 bottom-3 left-[11px] w-px"
         style={{
           background:
             'linear-gradient(180deg, rgba(255,74,92,.15), rgba(255,74,92,.55), var(--color-hot))',
         }}
       />
       {route.steps.map((step, n) => (
-        <li key={n} className="relative flex gap-3">
-          <span className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-hot/45 bg-void font-mono text-[10.5px] text-hot">
+        <li key={n} className="relative flex gap-3.5">
+          <span className="relative z-10 flex h-[23px] w-[23px] shrink-0 items-center justify-center rounded-full border border-hot/45 bg-void font-mono text-[11px] text-hot">
             {n + 1}
           </span>
-          <div className="min-w-0 flex-1 pt-0.5">
-            <div className="font-mono text-[11px] tracking-wide text-[#ff9a4d] uppercase">
-              {step.techniqueName}
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] leading-relaxed text-ink">{step.narrative}</p>
+            <div className="mt-1 font-mono text-[11px] text-ink-faint">
+              {step.techniqueName} · {step.reference}
             </div>
-            <p className="mt-1 text-[13px] leading-relaxed text-[#c3cede]">{step.narrative}</p>
-            <div className="mt-1 font-mono text-[10px] text-ink-faint">{step.reference}</div>
             <Evidence refs={step.evidence} tone="hot" />
           </div>
         </li>
       ))}
-      <li className="relative flex gap-3">
+      <li className="relative flex gap-3.5">
         <span
-          className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-hot font-mono text-[10.5px] text-hot"
+          className="relative z-10 flex h-[23px] w-[23px] shrink-0 items-center justify-center rounded-full border border-hot font-mono text-[11px] text-hot"
           style={{ background: 'rgba(255,74,92,.18)', boxShadow: '0 0 14px rgba(255,74,92,.5)' }}
         >
           {route.steps.length + 1}
         </span>
-        <div className="min-w-0 flex-1 pt-0.5">
-          <div className="font-mono text-[11px] tracking-wide text-hot uppercase">
-            Perform the action
-          </div>
-          <p className="mt-1 text-[13px] leading-relaxed text-[#c3cede]">
-            As <span className="font-mono text-ink">{shortName(route.via)}</span>, run{' '}
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] leading-relaxed text-ink">
+            As <span className="font-mono">{shortName(route.via)}</span>, run{' '}
             <span className="font-mono text-cold">{action}</span>.
           </p>
           <Evidence refs={route.finalEvidence} tone="hot" />
@@ -257,29 +221,24 @@ function IndirectRow({
             key={key}
             className="overflow-hidden rounded-lg border transition-colors"
             style={{
-              borderColor: open ? 'rgba(255,74,92,.4)' : 'rgba(255,74,92,.18)',
-              background: open ? 'rgba(255,74,92,.05)' : 'rgba(255,74,92,.025)',
+              borderColor: open ? 'rgba(255,74,92,.42)' : 'rgba(255,74,92,.2)',
+              background: open ? 'rgba(255,74,92,.055)' : 'rgba(255,74,92,.03)',
             }}
           >
             <button
               onClick={() => setOpenKey(open ? null : key)}
-              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-hot/[0.06]"
+              className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left transition-colors hover:bg-hot/[0.07]"
             >
               <Dot colour="var(--color-hot)" pulse />
-              <span className="truncate font-mono text-[13px] text-ink">{entry.name}</span>
-              <span className="hidden truncate font-mono text-[11px] text-ink-faint sm:inline">
-                {route.via === entry.principal
-                  ? '→ escalated membership'
-                  : `→ ${shortName(route.via)}`}
-              </span>
-              <span className="ml-auto flex shrink-0 items-center gap-2">
-                <Tag colour="var(--color-hot)">{hops} steps</Tag>
-                <span className="font-mono text-[10px] text-ink-faint">{open ? '−' : '+'}</span>
+              <span className="truncate font-mono text-[14px] text-ink">{entry.name}</span>
+              <span className="ml-auto flex shrink-0 items-center gap-2.5">
+                <span className="font-mono text-[12px] text-hot">in {hops} steps</span>
+                <span className="font-mono text-[12px] text-ink-faint">{open ? 'hide' : 'how'}</span>
               </span>
             </button>
 
             {open && (
-              <div className="border-t border-hot/20 px-3 py-4">
+              <div className="border-t border-hot/20 px-3.5 py-4">
                 <RouteTimeline route={route} action={action} />
               </div>
             )}
@@ -298,62 +257,23 @@ export function AnswerPanel({
   onPickResource: (resource: string) => void
 }) {
   const [openKey, setOpenKey] = useState<string | null>(null)
-  const routeCount = answer.indirect.reduce((n, i) => n + i.routes.length, 0)
-  const shortest = answer.indirect.length
-    ? Math.min(...answer.indirect.flatMap((i) => i.routes.map((r) => r.steps.length + 1)))
-    : null
 
   return (
-    <section id="answer" className="space-y-5">
-      <Interpretation answer={answer} onPickResource={onPickResource} />
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          label="Holds it directly"
-          value={answer.direct.length}
-          tone="cold"
-          note="What any permissions report would already show you."
-          delay={40}
-        />
-        <Stat
-          label="Can take it"
-          value={answer.indirect.length}
-          tone="hot"
-          note="No policy grants these principals the action."
-          delay={100}
-        />
-        <Stat
-          label="Shortest chain"
-          value={shortest}
-          suffix={shortest === 1 ? 'step' : 'steps'}
-          tone="hot"
-          note="Hops from a standing identity to the action."
-          delay={160}
-        />
-        <Stat
-          label="Routes proved"
-          value={routeCount}
-          tone="neutral"
-          note="Distinct chains, every hop backed by an allow."
-          delay={220}
-        />
+    <section id="answer" className="space-y-6">
+      <div className="space-y-3.5">
+        <Interpretation answer={answer} onPickResource={onPickResource} />
+        <Headline answer={answer} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="panel-cold ticks rise rounded-xl p-4 text-cold/25" style={{ animationDelay: '260ms' }}>
-          <div className="flex items-center gap-2.5">
-            <Dot colour="var(--color-cold)" />
-            <h3 className="display text-[15px] text-ink">Granted</h3>
-            <span className="ml-auto font-mono text-[12px] text-cold">
-              {answer.direct.length}
-            </span>
+        <div className="panel rounded-xl p-4">
+          <div className="mb-3.5 flex items-baseline gap-2.5">
+            <h3 className="text-[13px] font-semibold tracking-wide text-cold uppercase">Granted</h3>
+            <p className="text-[13px] text-ink-dim">someone wrote a policy that says yes</p>
           </div>
-          <p className="mt-1.5 text-[12.5px] leading-snug text-ink-dim">
-            Someone wrote a policy that says yes.
-          </p>
-          <div className="mt-3.5 space-y-2">
+          <div className="space-y-2">
             {answer.direct.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-line px-3 py-6 text-center text-[13px] text-ink-faint">
+              <p className="rounded-lg border border-dashed border-line px-3 py-7 text-center text-[13.5px] text-ink-faint">
                 Nobody holds this outright.
               </p>
             ) : (
@@ -362,20 +282,16 @@ export function AnswerPanel({
           </div>
         </div>
 
-        <div className="panel-hot ticks rise rounded-xl p-4 text-hot/25" style={{ animationDelay: '320ms' }}>
-          <div className="flex items-center gap-2.5">
-            <Dot colour="var(--color-hot)" pulse={answer.indirect.length > 0} />
-            <h3 className="display text-[15px] text-ink">Reachable</h3>
-            <span className="ml-auto font-mono text-[12px] text-hot">
-              {answer.indirect.length}
-            </span>
+        <div className="panel-hot rounded-xl p-4">
+          <div className="mb-3.5 flex items-baseline gap-2.5">
+            <h3 className="text-[13px] font-semibold tracking-wide text-hot uppercase">
+              Can take it
+            </h3>
+            <p className="text-[13px] text-ink-dim">no policy grants them this</p>
           </div>
-          <p className="mt-1.5 text-[12.5px] leading-snug text-ink-dim">
-            Nobody granted these. They can take them anyway.
-          </p>
-          <div className="mt-3.5 space-y-2">
+          <div className="space-y-2">
             {answer.indirect.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-line px-3 py-6 text-center text-[13px] text-ink-faint">
+              <p className="rounded-lg border border-dashed border-line px-3 py-7 text-center text-[13.5px] text-ink-faint">
                 No escalation route reaches this.
               </p>
             ) : (
