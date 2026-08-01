@@ -1,0 +1,315 @@
+{
+  "provider": "aws",
+  "id": "123456789012",
+  "name": "AcmeCorp Production",
+  "trustedAccounts": ["123456789012"],
+
+  "entities": [
+    {
+      "id": "arn:aws:iam::123456789012:user/alice",
+      "type": "user",
+      "name": "alice",
+      "memberOf": ["arn:aws:iam::123456789012:group/developers"],
+      "tags": { "title": "Senior Backend Engineer" }
+    },
+    {
+      "id": "arn:aws:iam::123456789012:user/bob",
+      "type": "user",
+      "name": "bob",
+      "memberOf": ["arn:aws:iam::123456789012:group/interns"],
+      "tags": { "title": "Summer Intern" }
+    },
+    {
+      "id": "arn:aws:iam::123456789012:user/carol",
+      "type": "user",
+      "name": "carol",
+      "memberOf": ["arn:aws:iam::123456789012:group/security"],
+      "tags": { "title": "Security Auditor" }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:group/developers",
+      "type": "group",
+      "name": "developers",
+      "attachedPolicies": ["arn:aws:iam::123456789012:policy/DeveloperBaseline"]
+    },
+    {
+      "id": "arn:aws:iam::123456789012:group/interns",
+      "type": "group",
+      "name": "interns",
+      "attachedPolicies": ["arn:aws:iam::123456789012:policy/InternOnboarding"]
+    },
+    {
+      "id": "arn:aws:iam::123456789012:group/security",
+      "type": "group",
+      "name": "security",
+      "attachedPolicies": ["arn:aws:iam::123456789012:policy/SecurityAudit"]
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:role/ec2-app-role",
+      "type": "role",
+      "name": "ec2-app-role",
+      "attachedPolicies": ["arn:aws:iam::123456789012:policy/ProdDatabaseAccess"],
+      "trustPolicy": "arn:aws:iam::123456789012:policy/Ec2AppRoleTrust"
+    },
+    {
+      "id": "arn:aws:iam::123456789012:role/ci-deploy",
+      "type": "role",
+      "name": "ci-deploy",
+      "attachedPolicies": ["arn:aws:iam::123456789012:policy/CiDeployPermissions"],
+      "trustPolicy": "arn:aws:iam::123456789012:policy/CiDeployTrust"
+    },
+    {
+      "id": "arn:aws:iam::123456789012:role/breakglass-admin",
+      "type": "role",
+      "name": "breakglass-admin",
+      "attachedPolicies": ["arn:aws:iam::123456789012:policy/AdministratorAccess"],
+      "trustPolicy": "arn:aws:iam::123456789012:policy/BreakglassTrust"
+    },
+
+    {
+      "id": "arn:aws:rds:eu-west-1:123456789012:cluster:acme-prod-primary",
+      "type": "resource",
+      "name": "acme-prod-primary",
+      "tags": { "env": "production", "data": "customer-pii" }
+    },
+    {
+      "id": "arn:aws:s3:::acme-prod-backups",
+      "type": "resource",
+      "name": "acme-prod-backups",
+      "tags": { "env": "production", "data": "database-backups" }
+    }
+  ],
+
+  "policies": [
+    {
+      "id": "arn:aws:iam::123456789012:policy/DeveloperBaseline",
+      "name": "DeveloperBaseline",
+      "kind": "identity",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "ReadBuckets",
+            "Effect": "Allow",
+            "Action": ["s3:GetObject", "s3:ListBucket"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "InspectCompute",
+            "Effect": "Allow",
+            "Action": ["ec2:Describe*", "logs:FilterLogEvents"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "LaunchDevInstances",
+            "Effect": "Allow",
+            "Action": ["ec2:RunInstances", "ec2:TerminateInstances"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "PassRolesToServices",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "*"
+          },
+          {
+            "Sid": "DeployFunctions",
+            "Effect": "Allow",
+            "Action": ["lambda:CreateFunction", "lambda:InvokeFunction", "lambda:UpdateFunctionCode"],
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:policy/InternOnboarding",
+      "name": "InternOnboarding",
+      "kind": "identity",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "ReadOnlyStarter",
+            "Effect": "Allow",
+            "Action": ["s3:GetObject", "ec2:Describe*", "cloudwatch:GetMetricData"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "SelfServiceProjectGroups",
+            "Effect": "Allow",
+            "Action": "iam:AddUserToGroup",
+            "Resource": "*"
+          },
+          {
+            "Sid": "ReadOwnIdentity",
+            "Effect": "Allow",
+            "Action": ["iam:Get*", "iam:List*"],
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:policy/SecurityAudit",
+      "name": "SecurityAudit",
+      "kind": "identity",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "AuditTrail",
+            "Effect": "Allow",
+            "Action": ["cloudtrail:LookupEvents", "config:Describe*"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "AuditEverythingExceptIam",
+            "Effect": "Allow",
+            "NotAction": ["iam:*", "kms:Decrypt"],
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:policy/ProdDatabaseAccess",
+      "name": "ProdDatabaseAccess",
+      "kind": "identity",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "ManageProdCluster",
+            "Effect": "Allow",
+            "Action": "rds:*",
+            "Resource": "arn:aws:rds:eu-west-1:123456789012:cluster:acme-prod-primary"
+          },
+          {
+            "Sid": "WriteBackups",
+            "Effect": "Allow",
+            "Action": "s3:*",
+            "Resource": ["arn:aws:s3:::acme-prod-backups", "arn:aws:s3:::acme-prod-backups/*"]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:policy/CiDeployPermissions",
+      "name": "CiDeployPermissions",
+      "kind": "identity",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "DeployArtifacts",
+            "Effect": "Allow",
+            "Action": "s3:*",
+            "Resource": "*"
+          },
+          {
+            "Sid": "RunTasks",
+            "Effect": "Allow",
+            "Action": ["ecs:RunTask", "iam:PassRole"],
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:policy/AdministratorAccess",
+      "name": "AdministratorAccess",
+      "kind": "identity",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "FullAccess",
+            "Effect": "Allow",
+            "Action": "*",
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:policy/Ec2AppRoleTrust",
+      "name": "Ec2AppRoleTrust",
+      "kind": "trust",
+      "attachedTo": "arn:aws:iam::123456789012:role/ec2-app-role",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "Ec2ServiceTrust",
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
+            "Principal": { "Service": "ec2.amazonaws.com" }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:policy/CiDeployTrust",
+      "name": "CiDeployTrust",
+      "kind": "trust",
+      "attachedTo": "arn:aws:iam::123456789012:role/ci-deploy",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "AllowCiProvider",
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
+            "Principal": { "AWS": "*" }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:policy/BreakglassTrust",
+      "name": "BreakglassTrust",
+      "kind": "trust",
+      "attachedTo": "arn:aws:iam::123456789012:role/breakglass-admin",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "VendorBreakglass",
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
+            "Principal": { "AWS": "arn:aws:iam::999888777666:root" }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "arn:aws:iam::123456789012:policy/ProdBackupsBucketPolicy",
+      "name": "ProdBackupsBucketPolicy",
+      "kind": "resource",
+      "attachedTo": "arn:aws:s3:::acme-prod-backups",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "AllowCdnRead",
+            "Effect": "Allow",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::acme-prod-backups/*",
+            "Principal": { "AWS": "*" }
+          }
+        ]
+      }
+    }
+  ]
+}
