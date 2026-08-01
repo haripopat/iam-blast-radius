@@ -1,26 +1,467 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ---------------------------------------------------------------------------
+   IAM Blast Radius — design system
+
+   One idea runs through the whole surface: two temperatures.
+
+   Cold (mint) is the account as somebody designed it — declared grants, group
+   membership, chrome, anything you could have read off an org chart.
+   Hot (coral) is what the engine proved you can *take* — escalation routes,
+   reachable principals, the blast radius itself. Hot elements glow and move;
+   cold elements are matte and still.
+
+   Nothing decorative is hot. If it burns, the engine proved it.
+--------------------------------------------------------------------------- */
+
+@theme {
+  --color-void: #06080c;
+  --color-panel: #0c1017;
+  --color-panel-2: #111823;
+  --color-panel-3: #161f2c;
+  --color-line: #1a222f;
+  --color-line-2: #232e3f;
+
+  --color-ink: #e9eef7;
+  --color-ink-dim: #8593a8;
+  --color-ink-faint: #4d5a6d;
+
+  --color-cold: #4fd8c4;
+  --color-cold-deep: #12a595;
+  --color-hot: #ff4a5c;
+  --color-hot-deep: #c31f30;
+  --color-amber: #f5a524;
+
+  --color-sev-critical: #ff3b4e;
+  --color-sev-high: #ff8a3d;
+  --color-sev-medium: #f5c33b;
+  --color-sev-low: #4fa8ff;
+  --color-sev-info: #6b7a90;
+
+  --font-display: var(--font-bricolage), ui-sans-serif, sans-serif;
+  --font-sans: var(--font-plex-sans), ui-sans-serif, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* --- base ---------------------------------------------------------------- */
+
+* {
+  border-color: var(--color-line);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--color-void);
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-cold) 30%, transparent);
+  color: #ffffff;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-void);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-2);
+  border: 3px solid var(--color-void);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #35435a;
+}
+
+/* --- atmosphere ---------------------------------------------------------- */
+
+/* Two blooms, one per temperature, anchored where each side of the page lives.
+   The grid is a faint blueprint; the grain kills banding across the blooms. */
+.atmosphere::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 620px at 8% -12%, rgba(79, 216, 196, 0.11), transparent 68%),
+    radial-gradient(900px 700px at 96% 4%, rgba(255, 74, 92, 0.085), transparent 66%),
+    radial-gradient(1200px 900px at 50% 110%, rgba(79, 216, 196, 0.05), transparent 70%);
+}
+
+.atmosphere::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, #000 20%, transparent 78%);
+}
+
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.038;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --- surfaces ------------------------------------------------------------ */
+
+.panel {
+  position: relative;
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 42%),
+    var(--color-panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 22px 50px -34px rgba(0, 0, 0, 0.9);
+}
+
+.panel-hot {
+  border-color: rgba(255, 74, 92, 0.3);
+  background:
+    radial-gradient(680px 320px at 88% -20%, rgba(255, 74, 92, 0.13), transparent 62%),
+    linear-gradient(180deg, rgba(255, 74, 92, 0.045), transparent 44%),
+    var(--color-panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 138, 150, 0.09),
+    0 0 46px -22px rgba(255, 74, 92, 0.55),
+    0 22px 50px -34px rgba(0, 0, 0, 0.9);
+}
+
+.panel-cold {
+  border-color: rgba(79, 216, 196, 0.2);
+  background:
+    radial-gradient(680px 320px at 12% -20%, rgba(79, 216, 196, 0.075), transparent 62%),
+    var(--color-panel);
+  box-shadow:
+    inset 0 1px 0 rgba(79, 216, 196, 0.06),
+    0 22px 50px -34px rgba(0, 0, 0, 0.9);
+}
+
+/* Instrument corner ticks. A texture cue — they mark a panel as a readout
+   rather than a card. */
+.ticks::before,
+.ticks::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+  opacity: 0.5;
+}
+.ticks::before {
+  top: 7px;
+  left: 7px;
+  border-top: 1px solid currentColor;
+  border-left: 1px solid currentColor;
+}
+.ticks::after {
+  bottom: 7px;
+  right: 7px;
+  border-bottom: 1px solid currentColor;
+  border-right: 1px solid currentColor;
+}
+
+.hairline {
+  height: 1px;
+  background: linear-gradient(90deg, var(--color-line-2), transparent);
+}
+
+/* --- type ---------------------------------------------------------------- */
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+.numeral {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.032em;
+}
+
+/* --- motion -------------------------------------------------------------- */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: rise 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Dashes travelling along a proved escalation edge. The direction the dashes
+   move is the direction of the attack. */
+@keyframes flow {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+@keyframes ring {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.5;
+  }
+  70% {
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.85);
+    opacity: 0;
+  }
+}
+
+@keyframes sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(210%);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.breathe {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+/* Scanline that runs across the query bar while the engine evaluates. */
+.scanning {
+  overflow: hidden;
+}
+.scanning::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(79, 216, 196, 0.14) 45%,
+    rgba(79, 216, 196, 0.28) 50%,
+    rgba(79, 216, 196, 0.14) 55%,
+    transparent
+  );
+  animation: sweep 1.15s linear infinite;
+}
+
+/* --- controls ------------------------------------------------------------ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--color-line-2);
+  background: rgba(255, 255, 255, 0.018);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-ink-dim);
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.chip:hover {
+  color: var(--color-ink);
+  border-color: rgba(79, 216, 196, 0.5);
+  background: rgba(79, 216, 196, 0.07);
+  transform: translateY(-1px);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2.5px 7px;
+  border-radius: 5px;
+  border: 1px solid;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  position: relative;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #5fe6d2, var(--color-cold-deep));
+  color: #04120f;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 10px 26px -12px rgba(79, 216, 196, 0.75);
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    filter 0.16s ease;
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 16px 34px -12px rgba(79, 216, 196, 0.85);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn-primary:disabled {
+  opacity: 0.38;
+  box-shadow: none;
+}
+
+.btn-ghost {
+  border: 1px solid var(--color-line-2);
+  border-radius: 10px;
+  color: var(--color-ink-dim);
+  background: rgba(255, 255, 255, 0.015);
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+.btn-ghost:hover {
+  color: var(--color-ink);
+  border-color: rgba(79, 216, 196, 0.45);
+  background: rgba(79, 216, 196, 0.06);
+}
+
+.field {
+  border: 1px solid var(--color-line-2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent), #090d13;
+  color: var(--color-ink);
+  outline: none;
+  caret-color: var(--color-cold);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.field::placeholder {
+  color: #3f4b5d;
+}
+.field:focus {
+  border-color: rgba(79, 216, 196, 0.55);
+  box-shadow:
+    0 0 0 3px rgba(79, 216, 196, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* Native select, restyled — one dropdown does not justify a popover
+   implementation, but it should not look like a form from 2009 either. */
+.select {
+  appearance: none;
+  border: 1px solid var(--color-line-2);
+  border-radius: 10px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpath d='M1 1.5 5 5.5 9 1.5' stroke='%238593a8' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")
+      no-repeat right 12px center,
+    rgba(255, 255, 255, 0.02);
+  padding-right: 32px;
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color 0.18s ease;
+}
+.select:hover,
+.select:focus {
+  border-color: rgba(79, 216, 196, 0.45);
+}
+.select option {
+  background: var(--color-panel-2);
+  color: var(--color-ink);
+}
+
+/* --- evidence ------------------------------------------------------------ */
+
+.receipt {
+  border: 1px solid var(--color-line);
+  border-radius: 9px;
+  background: #080b11;
+  overflow: hidden;
+}
+
+.receipt pre {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+/* --- graph --------------------------------------------------------------- */
+
+/* Hovering a node dims everything it has no relationship to, so a dense
+   account can still be read one principal at a time. */
+.graph .dim {
+  opacity: 0.12;
+}
+
+.graph .edge,
+.graph .node {
+  transition: opacity 0.22s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
