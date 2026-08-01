@@ -117,11 +117,11 @@ function AnswerPanel({
             className="rounded border border-[#1e2635] px-1.5 py-0.5 normal-case"
             title={
               answer.parsedBy === 'model'
-                ? 'Claude translated your question into this query, choosing from a fixed list of resources. It did not answer it.'
+                ? 'Gemini translated your question into this query, choosing from a fixed list of resources. It did not answer it.'
                 : 'Parsed by the built-in rules — no model was called.'
             }
           >
-            {answer.parsedBy === 'model' ? 'parsed by Claude' : 'parsed by rules'}
+            {answer.parsedBy === 'model' ? 'parsed by Gemini' : 'parsed by rules'}
           </span>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-2">

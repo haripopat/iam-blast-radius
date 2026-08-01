@@ -2,8 +2,8 @@
  * The AI layer — and the tight leash it runs on.
  *
  * The deterministic parser in `query.ts` handles clean phrasings. This layer
- * handles the messy ones ("can the summer intern nuke our customer data?")
- * by asking Claude to translate the question into a concrete query.
+ * handles the messy ones ("what happens if bob goes rogue?") by asking Gemini
+ * to translate the question into a concrete query.
  *
  * Three constraints keep it honest:
  *
@@ -23,13 +23,28 @@
  * It maps English onto an identifier. That is the whole job.
  */
 
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenAI, ThinkingLevel } from '@google/genai'
 import { IamEngine } from './engine'
 import { ParsedQuestion } from './query'
 import { parseArn } from './match'
 import { allKnownActions } from './actions'
 
-const MODEL = 'claude-opus-5'
+/**
+ * Models to try, in order.
+ *
+ * Two things drive this list. First, thinking is turned down to MINIMAL:
+ * this is a translation task, not a reasoning task, and the difference is
+ * dramatic — at the default thinking level the same call takes ~21s, which is
+ * unusable interactively. At MINIMAL it is ~1.1s with identical output on our
+ * test questions.
+ *
+ * Second, free-tier Gemini enforces a per-minute quota, and a burst of
+ * questions during a demo will trip it. Rather than let one 429 drop us all
+ * the way back to keyword matching, we fall through to a second model with
+ * its own quota pool. Only if every model fails do we return null.
+ */
+const MODELS = ['gemini-3-flash-preview', 'gemini-flash-lite-latest']
+const THINKING_LEVEL = ThinkingLevel.MINIMAL
 
 /**
  * The closed set the model picks from — read from the shared catalogue so it
@@ -37,19 +52,25 @@ const MODEL = 'claude-opus-5'
  */
 const KNOWN_ACTIONS = allKnownActions()
 
+function apiKey(): string | undefined {
+  return process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY
+}
+
+export function isModelParserAvailable(): boolean {
+  return Boolean(apiKey())
+}
+
 /**
- * Ask Claude to turn a question into an (action, resource) pair.
+ * Ask Gemini to turn a question into an (action, resource) pair.
  * Returns null whenever anything at all goes wrong.
- *
- * No credential check up front: the SDK resolves an API key, an auth token, or
- * an `ant auth login` profile on its own, and throws immediately if it finds
- * none. Letting that throw land in the catch below covers every credential
- * source without us having to enumerate them.
  */
 export async function parseQuestionWithModel(
   engine: IamEngine,
   question: string
 ): Promise<ParsedQuestion | null> {
+  const key = apiKey()
+  if (!key) return null
+
   const resources = engine.entities('resource')
   if (resources.length === 0) return null
 
@@ -65,66 +86,75 @@ export async function parseQuestionWithModel(
     })
     .join('\n')
 
+  const ai = new GoogleGenAI({ apiKey: key })
+
+  for (const model of MODELS) {
+    const parsed = await tryModel(ai, model, engine, resources, resourceIds, inventory, question)
+    if (parsed) return parsed
+  }
+  return null
+}
+
+async function tryModel(
+  ai: GoogleGenAI,
+  model: string,
+  engine: IamEngine,
+  resources: ReturnType<IamEngine['entities']>,
+  resourceIds: string[],
+  inventory: string,
+  question: string
+): Promise<ParsedQuestion | null> {
   try {
-    const client = new Anthropic()
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 2048,
-      output_config: {
-        effort: 'low',
-        format: {
-          type: 'json_schema',
-          schema: {
-            type: 'object',
-            properties: {
-              action: {
-                type: 'string',
-                enum: KNOWN_ACTIONS,
-                description: 'The IAM action the question is asking about.',
-              },
-              resource: {
-                type: 'string',
-                enum: resourceIds,
-                description:
-                  'The ARN of the resource being asked about, or "*" for the whole account.',
-              },
-              interpretation: {
-                type: 'string',
-                description:
-                  'One plain sentence restating the question as the query you chose, shown to the user so they can correct you.',
-              },
-              confident: {
-                type: 'boolean',
-                description:
-                  'False if the question was ambiguous or you had to guess which resource was meant.',
-              },
+    const response = await ai.models.generateContent({
+      model,
+      contents: `Resources in this account:\n${inventory}\n\nQuestion: ${question}`,
+      config: {
+        thinkingConfig: { thinkingLevel: THINKING_LEVEL },
+        responseMimeType: 'application/json',
+        responseJsonSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: KNOWN_ACTIONS,
+              description: 'The IAM action the question is asking about.',
             },
-            required: ['action', 'resource', 'interpretation', 'confident'],
-            additionalProperties: false,
+            resource: {
+              type: 'string',
+              enum: resourceIds,
+              description:
+                'The ARN of the resource being asked about, or "*" for the whole account.',
+            },
+            interpretation: {
+              type: 'string',
+              description:
+                'Restate the query you chose, starting with "Who can" and naming the ' +
+                'action and the resource in plain words. No first person, no ' +
+                'explanation. Example: "Who can read the production database credentials".',
+            },
+            confident: {
+              type: 'boolean',
+              description:
+                'False if the question was ambiguous or you had to guess which resource was meant.',
+            },
           },
+          required: ['action', 'resource', 'interpretation', 'confident'],
+          additionalProperties: false,
         },
+        systemInstruction:
+          'You translate plain-English questions about cloud permissions into a single ' +
+          'concrete IAM query. You are a translation layer only: you never decide who ' +
+          'can do what, and you never assess risk. A separate deterministic engine ' +
+          'answers the query you produce.\n\n' +
+          'Pick the action and resource that best match the question. Both must come ' +
+          'from the allowed values. Prefer the most destructive plausible action when ' +
+          'the user asks about damage or risk, because the answer should cover the ' +
+          'worst case. Set confident to false whenever more than one resource could ' +
+          'reasonably be meant.',
       },
-      system:
-        'You translate plain-English questions about cloud permissions into a single ' +
-        'concrete IAM query. You are a translation layer only: you never decide who ' +
-        'can do what, and you never assess risk. A separate deterministic engine ' +
-        'answers the query you produce.\n\n' +
-        'Pick the action and resource that best match the question. Both must come ' +
-        'from the allowed values. Prefer the most destructive plausible action when ' +
-        'the user asks about damage or risk, because the answer should cover the ' +
-        'worst case. Set confident to false whenever more than one resource could ' +
-        'reasonably be meant.',
-      messages: [
-        {
-          role: 'user',
-          content:
-            `Resources in this account:\n${inventory}\n\n` +
-            `Question: ${question}`,
-        },
-      ],
     })
 
-    const text = response.content.find((b) => b.type === 'text')?.text
+    const text = response.text
     if (!text) return null
 
     const raw = JSON.parse(text) as {
@@ -150,7 +180,8 @@ export async function parseQuestionWithModel(
         .map((r) => ({ label: r.name, resource: r.id })),
     }
   } catch {
-    // Any failure at all falls back to the deterministic parser.
+    // Quota, network, malformed output — try the next model, and if this was
+    // the last one the caller falls back to the deterministic parser.
     return null
   }
 }

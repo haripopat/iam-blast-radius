@@ -28,7 +28,7 @@ No individual policy in that account looks wrong.
 
 **The model never decides anything.** The verdicts come from a policy evaluator that implements the documented IAM evaluation rules — explicit deny beats allow, allow beats implicit deny, with three-state condition handling so an unresolvable condition is reported as *conditional* rather than guessed either way.
 
-Claude sits at one edge only: it turns your English question into an `(action, resource)` pair. It picks from a JSON-schema `enum` built from the account itself, so it physically cannot name a resource that doesn't exist — and we re-validate its answer against the engine anyway. If it's unavailable or returns anything unverifiable, a deterministic parser answers instead and the UI says which one ran.
+Gemini sits at one edge only: it turns your English question into an `(action, resource)` pair. It picks from a JSON-schema `enum` built from the account itself, so it physically cannot name a resource that doesn't exist — and we re-validate its answer against the engine anyway. If it's unavailable or returns anything unverifiable, a deterministic parser answers instead and the UI says which one ran.
 
 **Every finding carries a receipt** — file, JSON pointer, line number, and the literal statement. Disagree with us and check.
 
@@ -38,7 +38,7 @@ Claude sits at one edge only: it turns your English question into an `(action, r
 npm install && npm run dev
 ```
 
-Then open http://localhost:3000. No API key needed — the deterministic parser handles the demo questions. Set `ANTHROPIC_API_KEY` to enable Claude for messier phrasings.
+Then open http://localhost:3000. No API key needed — the deterministic parser handles the demo questions. Put `GEMINI_API_KEY=...` in `.env.local` to enable Gemini for messier phrasings ("what happens if bob goes rogue", "could a junior dev leak the database password").
 
 Engine-only, no UI:
 
